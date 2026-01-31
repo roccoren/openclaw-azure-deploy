@@ -33,7 +33,9 @@ ENV NODE_ENV=production \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     # Use production npm settings
     NPM_CONFIG_FUND=false \
-    NPM_CONFIG_AUDIT=false
+    NPM_CONFIG_AUDIT=false \
+    # Suppress npm deprecation warnings from transitive deps
+    NODE_NO_WARNINGS=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -71,8 +73,8 @@ RUN groupadd --gid 1001 openclaw \
 RUN mkdir -p /data/workspace /data/config /data/logs /data/cache \
     && chown -R openclaw:openclaw /data
 
-# Install OpenClaw globally
-RUN npm install -g openclaw@${OPENCLAW_VERSION} \
+# Install OpenClaw globally (suppress deprecation warnings from transitive deps)
+RUN npm install -g openclaw@${OPENCLAW_VERSION} --no-audit --no-fund \
     && npm cache clean --force
 
 # Copy health check script

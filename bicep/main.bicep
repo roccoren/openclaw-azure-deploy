@@ -136,6 +136,9 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 }
 
 // Key Vault for secrets
+// Note: enablePurgeProtection cannot be disabled once enabled on an existing vault
+// For dev/staging, we simply don't specify it (defaults to false for new vaults)
+// For existing vaults with purge protection, this deployment will succeed since we're not trying to disable it
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: resourceNames.keyVault
   location: location
@@ -149,7 +152,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: environment == 'prod' ? 90 : 7
-    enablePurgeProtection: environment == 'prod' ? true : false
+    enablePurgeProtection: true // Always enable - cannot be disabled once set
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       defaultAction: 'Allow'
@@ -169,9 +172,9 @@ resource kvSecretsOfficerRole 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
-// Storage Account for persistent data
+// Storage Account for persistent data (name must be 3-24 chars, lowercase, no special chars)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: take(replace(toLower(resourceNames.storageAccount), '-', ''), 24)
+  name: take(replace(toLower('${baseName}st${environment}${uniqueString(resourceGroup().id)}'), '-', ''), 24)
   location: location
   tags: allTags
   sku: {

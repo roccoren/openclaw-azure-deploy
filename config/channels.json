@@ -1,0 +1,107 @@
+{
+  "$schema": "https://raw.githubusercontent.com/openclaw/openclaw/main/schemas/channels.schema.json",
+  "version": "1.0.0",
+  "channels": {
+    "teams": {
+      "enabled": false,
+      "type": "msteams",
+      "config": {
+        "appId": "${TEAMS_APP_ID}",
+        "appPassword": "${TEAMS_APP_PASSWORD}",
+        "endpoint": "/api/messages",
+        "tenantId": "",
+        "notifyOnStart": false,
+        "typingIndicator": true
+      },
+      "permissions": {
+        "allowedUsers": [],
+        "allowedGroups": [],
+        "adminUsers": []
+      },
+      "notes": "Get credentials from Azure Bot Service registration. Endpoint should be: https://<your-container-app>.azurecontainerapps.io/api/messages"
+    },
+    "slack": {
+      "enabled": false,
+      "type": "slack",
+      "config": {
+        "botToken": "${SLACK_BOT_TOKEN}",
+        "appToken": "${SLACK_APP_TOKEN}",
+        "signingSecret": "${SLACK_SIGNING_SECRET}",
+        "socketMode": true,
+        "typingIndicator": true
+      },
+      "permissions": {
+        "allowedChannels": [],
+        "allowedUsers": [],
+        "adminUsers": []
+      },
+      "notes": "Create app at https://api.slack.com/apps. Required scopes: app_mentions:read, chat:write, im:history, im:read, im:write"
+    },
+    "telegram": {
+      "enabled": false,
+      "type": "telegram",
+      "config": {
+        "botToken": "${TELEGRAM_BOT_TOKEN}",
+        "webhookUrl": "",
+        "useWebhook": false,
+        "allowedUpdates": ["message", "callback_query", "inline_query"],
+        "parseMode": "Markdown"
+      },
+      "permissions": {
+        "allowedUsers": [],
+        "allowedGroups": [],
+        "adminUsers": []
+      },
+      "notes": "Create bot via @BotFather. For webhook mode, set webhookUrl to https://<your-container-app>.azurecontainerapps.io/telegram/webhook"
+    },
+    "discord": {
+      "enabled": false,
+      "type": "discord",
+      "config": {
+        "botToken": "${DISCORD_BOT_TOKEN}",
+        "clientId": "${DISCORD_CLIENT_ID}",
+        "guildIds": [],
+        "intents": ["Guilds", "GuildMessages", "DirectMessages", "MessageContent"],
+        "typingIndicator": true
+      },
+      "permissions": {
+        "allowedGuilds": [],
+        "allowedChannels": [],
+        "allowedRoles": [],
+        "adminUsers": []
+      },
+      "notes": "Create app at https://discord.com/developers/applications. Enable MESSAGE CONTENT intent in bot settings."
+    },
+    "webhook": {
+      "enabled": false,
+      "type": "webhook",
+      "config": {
+        "endpoint": "/api/webhook",
+        "secret": "${WEBHOOK_SECRET}",
+        "responseFormat": "json"
+      },
+      "notes": "Generic webhook endpoint for custom integrations. POST to https://<your-container-app>.azurecontainerapps.io/api/webhook"
+    }
+  },
+  "defaults": {
+    "responseTimeout": 60000,
+    "maxMessageLength": 4000,
+    "errorMessage": "I encountered an error processing your request. Please try again.",
+    "rateLimiting": {
+      "enabled": true,
+      "maxRequestsPerMinute": 30,
+      "maxRequestsPerHour": 500
+    }
+  },
+  "notifications": {
+    "onError": {
+      "enabled": true,
+      "channels": []
+    },
+    "onStartup": {
+      "enabled": false,
+      "channels": [],
+      "message": "🚀 OpenClaw is now online!"
+    }
+  }
+}

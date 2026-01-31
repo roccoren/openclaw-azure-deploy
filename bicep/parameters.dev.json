@@ -14,9 +14,6 @@
     "acrName": {
       "value": ""
     },
-    "enableFrontDoor": {
-      "value": false
-    },
     "enableZoneRedundancy": {
       "value": false
     },

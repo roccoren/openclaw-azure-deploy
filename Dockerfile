@@ -81,6 +81,10 @@ RUN npm install -g openclaw@${OPENCLAW_VERSION} --no-audit --no-fund \
 COPY --chown=openclaw:openclaw scripts/healthcheck.sh /usr/local/bin/healthcheck
 RUN chmod +x /usr/local/bin/healthcheck
 
+# Copy entrypoint script (as root so chmod works)
+COPY --chown=openclaw:openclaw scripts/entrypoint.sh /usr/local/bin/entrypoint
+RUN chmod +x /usr/local/bin/entrypoint
+
 # Set working directory
 WORKDIR /data/workspace
 
@@ -94,10 +98,6 @@ EXPOSE 18789
 # Azure Container Apps uses HTTP probes, but this is a fallback
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD /usr/local/bin/healthcheck || exit 1
-
-# Copy entrypoint script
-COPY scripts/entrypoint.sh /usr/local/bin/entrypoint
-RUN chmod +x /usr/local/bin/entrypoint
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]

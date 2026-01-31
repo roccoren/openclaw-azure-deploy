@@ -63,9 +63,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Create non-root user for security
-RUN groupadd --gid 1000 openclaw \
-    && useradd --uid 1000 --gid openclaw --shell /bin/bash --create-home openclaw
+# Create non-root user for security (use UID/GID 1001 to avoid conflicts with node group)
+RUN groupadd --gid 1001 openclaw \
+    && useradd --uid 1001 --gid openclaw --shell /bin/bash --create-home openclaw
 
 # Create data directories with proper permissions
 RUN mkdir -p /data/workspace /data/config /data/logs /data/cache \

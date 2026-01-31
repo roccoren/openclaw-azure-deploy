@@ -274,15 +274,19 @@ deploy_infrastructure() {
         az deployment group create
         --resource-group "$RESOURCE_GROUP"
         --template-file "${BICEP_DIR}/main.bicep"
+    )
+
+    # Apply parameters file first, then override with explicit values
+    if [[ -n "$PARAMS_FILE" ]]; then
+        DEPLOY_CMD+=(--parameters "@${PARAMS_FILE}")
+    fi
+
+    DEPLOY_CMD+=(
         --parameters environment="$ENVIRONMENT"
         --parameters baseName="$BASE_NAME"
         --parameters containerImage="$CONTAINER_IMAGE"
         --parameters acrName="$ACR_NAME"
     )
-
-    if [[ -n "$PARAMS_FILE" ]]; then
-        DEPLOY_CMD+=(--parameters "@${PARAMS_FILE}")
-    fi
 
     "${DEPLOY_CMD[@]}" --output json > /tmp/deployment-output.json
 

@@ -15,7 +15,7 @@
       "value": ""
     },
     "enableZoneRedundancy": {
-      "value": true
+      "value": false
     },
     "tags": {
       "value": {

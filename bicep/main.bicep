@@ -55,8 +55,8 @@ param recoverKeyVault bool = false
 
 var envConfig = {
   dev: {
-    containerCpu: '0.5'
-    containerMemory: '1Gi'
+    containerCpu: '2.0'
+    containerMemory: '4Gi'
     minReplicas: 1
     maxReplicas: 1
   }

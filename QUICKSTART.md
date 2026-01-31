@@ -140,7 +140,7 @@ az deployment group create \
   -g $RG \
   -f bicep/main.bicep \
   -p @bicep/parameters.dev.json
-# Cost: ~$10/month
+# Cost: ~$25/month (2 vCPU, 4GB memory, prevents OOM)
 ```
 
 ### Prod (High Availability)

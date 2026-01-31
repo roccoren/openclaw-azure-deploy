@@ -98,5 +98,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
-# Start OpenClaw gateway (runs in foreground by default)
-CMD ["openclaw", "gateway", "start"]
+# Start OpenClaw gateway (foreground)
+CMD ["openclaw", "gateway", "run"]

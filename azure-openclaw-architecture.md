@@ -146,8 +146,8 @@ WORKDIR /data/workspace
 # Expose gateway port
 EXPOSE 18789
 
-# Start gateway (runs in foreground by default)
-CMD ["openclaw", "gateway", "start"]
+# Start gateway (foreground)
+CMD ["openclaw", "gateway", "run"]
 ```
 
 ## Infrastructure as Code (Bicep)

@@ -16,7 +16,13 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   if [[ -n "${GATEWAY_TOKEN:-}" ]]; then
     AUTH_BLOCK="\"auth\": {\"mode\": \"token\", \"token\": \"${GATEWAY_TOKEN}\"}"
   else
-    AUTH_BLOCK="\"auth\": {\"mode\": \"token\", \"token\": \"\"}"
+    # Generate a token if not provided
+    if command -v openssl >/dev/null 2>&1; then
+      GENERATED_TOKEN=$(openssl rand -hex 32)
+    else
+      GENERATED_TOKEN=$(cat /proc/sys/kernel/random/uuid | tr -d '-')
+    fi
+    AUTH_BLOCK="\"auth\": {\"mode\": \"token\", \"token\": \"${GENERATED_TOKEN}\"}"
   fi
 
   cat > "$CONFIG_PATH" <<EOF

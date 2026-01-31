@@ -8,16 +8,36 @@ mkdir -p /data/config /data/workspace /data/logs /data/cache
 
 # Create minimal config if missing (best-effort self-healing)
 if [[ ! -f "$CONFIG_PATH" ]]; then
-  cat > "$CONFIG_PATH" <<'EOF'
+  GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-loopback}"
+  GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+  LOG_LEVEL="${OPENCLAW_LOG_LEVEL:-info}"
+  MODEL_PRIMARY="${OPENCLAW_MODEL_PRIMARY:-github-copilot/gpt-5.2-codex}"
+
+  if [[ -n "${GATEWAY_TOKEN:-}" ]]; then
+    AUTH_BLOCK="\"auth\": {\"mode\": \"token\", \"token\": \"${GATEWAY_TOKEN}\"}"
+  else
+    AUTH_BLOCK="\"auth\": {\"mode\": \"token\", \"token\": \"\"}"
+  fi
+
+  cat > "$CONFIG_PATH" <<EOF
 {
   "gateway": {
     "mode": "local",
-    "bind": "loopback"
+    "bind": "${GATEWAY_BIND}",
+    "port": ${GATEWAY_PORT},
+    "logLevel": "${LOG_LEVEL}",
+    ${AUTH_BLOCK}
   },
   "agents": {
     "defaults": {
-      "workspace": "/data/workspace"
+      "workspace": "/data/workspace",
+      "model": { "primary": "${MODEL_PRIMARY}" }
     }
+  },
+  "workspace": "/data/workspace",
+  "channels": {},
+  "memory": {
+    "enabled": true
   }
 }
 EOF

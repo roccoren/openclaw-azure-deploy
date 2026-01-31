@@ -47,6 +47,9 @@ param anthropicApiKey string = ''
 @secure()
 param gatewayToken string = ''
 
+@description('Set to true to recover a soft-deleted Key Vault')
+param recoverKeyVault bool = false
+
 @description('VNet address prefix')
 param vnetAddressPrefix string = '10.0.0.0/16'
 
@@ -102,7 +105,7 @@ var resourceNames = {
   managedIdentity: '${baseName}-identity-${environment}'
   fileShare: 'openclaw-data'
   privateEndpoint: '${baseName}-storage-pe-${environment}'
-  privateDnsZone: 'privatelink.file.core.windows.net'
+  privateDnsZone: 'privatelink.file.${az.environment().suffixes.storage}'
 }
 
 // Merge default tags with provided tags
@@ -208,11 +211,13 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 // ============================================================================
 
 // Key Vault for secrets
+// Using createMode: 'recover' to recover soft-deleted vault if it exists
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: resourceNames.keyVault
   location: location
   tags: allTags
   properties: {
+    createMode: recoverKeyVault ? 'recover' : 'default'
     sku: {
       family: 'A'
       name: 'standard'
@@ -221,7 +226,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: environment == 'prod' ? 90 : 7
-    enablePurgeProtection: true
+    enablePurgeProtection: environment == 'prod'  // Only enable in prod (can't purge dev vaults otherwise)
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       defaultAction: 'Allow'
@@ -275,7 +280,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
   kind: 'FileStorage'  // NFS requires FileStorage kind
   properties: {
-    accessTier: 'Premium'
+    // Note: accessTier is not applicable for Premium FileStorage
     supportsHttpsTrafficOnly: false  // NFS uses port 2049, not HTTPS
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
@@ -383,7 +388,7 @@ resource privateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZ
 // ============================================================================
 
 // Container Apps Environment with VNet integration
-resource containerEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
+resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: resourceNames.containerEnv
   location: location
   tags: allTags
@@ -408,12 +413,12 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
 }
 
 // NFS Storage mount configuration (no account key needed!)
-resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+resource envStorage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
   parent: containerEnv
   name: 'openclaw-storage'
   properties: {
     nfsAzureFile: {
-      server: '${storageAccount.name}.file.core.windows.net'
+      server: '${storageAccount.name}.file.${az.environment().suffixes.storage}'
       shareName: resourceNames.fileShare
       accessMode: 'ReadWrite'
     }
@@ -430,7 +435,7 @@ resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
 // ============================================================================
 
 // Container App
-resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
+resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: resourceNames.containerApp
   location: location
   tags: allTags

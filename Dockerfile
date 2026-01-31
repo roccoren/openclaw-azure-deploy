@@ -95,8 +95,12 @@ EXPOSE 18789
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD /usr/local/bin/healthcheck || exit 1
 
+# Copy entrypoint script
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint
+RUN chmod +x /usr/local/bin/entrypoint
+
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
-# Start OpenClaw gateway (foreground)
-CMD ["openclaw", "gateway", "run"]
+# Start OpenClaw gateway via entrypoint
+CMD ["/usr/local/bin/entrypoint"]

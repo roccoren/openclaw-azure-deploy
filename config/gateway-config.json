@@ -24,7 +24,7 @@
     "cachePath": "/data/cache"
   },
   "agent": {
-    "model": "claude-sonnet-4-20250514",
+    "model": "github-copilot/gpt-5.2-codex",
     "maxTokens": 8192,
     "temperature": 0.7,
     "systemPrompt": null,

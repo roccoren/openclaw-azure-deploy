@@ -39,6 +39,14 @@ param enableZoneRedundancy bool = false
 @description('Tags to apply to all resources')
 param tags object = {}
 
+@description('Anthropic API Key (will be stored in Key Vault)')
+@secure()
+param anthropicApiKey string = ''
+
+@description('Gateway Token for OpenClaw authentication (will be stored in Key Vault)')
+@secure()
+param gatewayToken string = ''
+
 // ============================================================================
 // VARIABLES
 // ============================================================================
@@ -172,6 +180,26 @@ resource kvSecretsOfficerRole 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
+// Key Vault Secret: Anthropic API Key (only create if provided)
+resource anthropicApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (anthropicApiKey != '') {
+  parent: keyVault
+  name: 'anthropic-api-key'
+  properties: {
+    value: anthropicApiKey
+    contentType: 'text/plain'
+  }
+}
+
+// Key Vault Secret: Gateway Token (only create if provided)
+resource gatewayTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (gatewayToken != '') {
+  parent: keyVault
+  name: 'gateway-token'
+  properties: {
+    value: gatewayToken
+    contentType: 'text/plain'
+  }
+}
+
 // Storage Account for persistent data (name must be 3-24 chars, lowercase, no special chars)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: take(replace(toLower('${baseName}st${environment}${uniqueString(resourceGroup().id)}'), '-', ''), 24)
@@ -292,18 +320,23 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
           identity: managedIdentity.id
         }
       ] : []
-      secrets: [
-        {
-          name: 'anthropic-api-key'
-          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/anthropic-api-key'
-          identity: managedIdentity.id
-        }
-        {
-          name: 'gateway-token'
-          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/gateway-token'
-          identity: managedIdentity.id
-        }
-      ]
+      // Only include secrets that have been configured in Key Vault
+      secrets: union(
+        anthropicApiKey != '' ? [
+          {
+            name: 'anthropic-api-key'
+            keyVaultUrl: '${keyVault.properties.vaultUri}secrets/anthropic-api-key'
+            identity: managedIdentity.id
+          }
+        ] : [],
+        gatewayToken != '' ? [
+          {
+            name: 'gateway-token'
+            keyVaultUrl: '${keyVault.properties.vaultUri}secrets/gateway-token'
+            identity: managedIdentity.id
+          }
+        ] : []
+      )
     }
     template: {
       containers: [
@@ -314,16 +347,18 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             cpu: json(config.containerCpu)
             memory: config.containerMemory
           }
-          env: [
-            { name: 'NODE_ENV', value: environment == 'prod' ? 'production' : 'development' }
-            { name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }
-            { name: 'GATEWAY_TOKEN', secretRef: 'gateway-token' }
-            { name: 'OPENCLAW_WORKSPACE', value: '/data/workspace' }
-            { name: 'OPENCLAW_CONFIG', value: '/data/config' }
-            { name: 'OPENCLAW_LOG_LEVEL', value: environment == 'prod' ? 'info' : 'debug' }
-            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
-            { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
-          ]
+          env: union(
+            [
+              { name: 'NODE_ENV', value: environment == 'prod' ? 'production' : 'development' }
+              { name: 'OPENCLAW_WORKSPACE', value: '/data/workspace' }
+              { name: 'OPENCLAW_CONFIG', value: '/data/config' }
+              { name: 'OPENCLAW_LOG_LEVEL', value: environment == 'prod' ? 'info' : 'debug' }
+              { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
+              { name: 'AZURE_CLIENT_ID', value: managedIdentity.properties.clientId }
+            ],
+            anthropicApiKey != '' ? [{ name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }] : [],
+            gatewayToken != '' ? [{ name: 'GATEWAY_TOKEN', secretRef: 'gateway-token' }] : []
+          )
           volumeMounts: [
             {
               volumeName: 'data'
@@ -393,6 +428,8 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
   dependsOn: [
     envStorage
     kvSecretsOfficerRole
+    anthropicApiKeySecret
+    gatewayTokenSecret
   ]
 }
 

@@ -29,7 +29,8 @@ param containerImage string = ''
 @description('Azure Container Registry name (without .azurecr.io)')
 param acrName string = ''
 
-@description('Enable Azure Front Door for global distribution')
+@description('Enable Azure Front Door for global distribution (reserved for future use)')
+@metadata({ deprecated: true })
 param enableFrontDoor bool = false
 
 @description('Enable zone redundancy (higher availability, higher cost)')
@@ -90,7 +91,7 @@ var allTags = union({
   application: 'OpenClaw'
   environment: environment
   managedBy: 'Bicep'
-  deployedAt: utcNow('yyyy-MM-dd')
+  deployedAt: 'deployed'
 }, tags)
 
 // ============================================================================

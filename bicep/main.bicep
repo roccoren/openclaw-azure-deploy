@@ -47,6 +47,15 @@ param anthropicApiKey string = ''
 @secure()
 param gatewayToken string = ''
 
+@description('VNet address prefix')
+param vnetAddressPrefix string = '10.0.0.0/16'
+
+@description('Container Apps subnet address prefix')
+param containerAppsSubnetPrefix string = '10.0.0.0/23'
+
+@description('Private endpoints subnet address prefix')
+param privateEndpointSubnetPrefix string = '10.0.2.0/24'
+
 // ============================================================================
 // VARIABLES
 // ============================================================================
@@ -58,24 +67,21 @@ var envConfig = {
     containerMemory: '1Gi'
     minReplicas: 1
     maxReplicas: 1
-    storageSku: 'Standard_LRS'
-    storageQuotaGb: 5
+    storageQuotaGb: 100  // NFS minimum is 100 GB for Premium
   }
   staging: {
     containerCpu: '1.0'
     containerMemory: '2Gi'
     minReplicas: 1
     maxReplicas: 2
-    storageSku: 'Standard_LRS'
-    storageQuotaGb: 10
+    storageQuotaGb: 100
   }
   prod: {
     containerCpu: '2.0'
     containerMemory: '4Gi'
     minReplicas: 2
     maxReplicas: 5
-    storageSku: 'Standard_GRS'
-    storageQuotaGb: 50
+    storageQuotaGb: 256
   }
 }
 
@@ -83,15 +89,20 @@ var config = envConfig[environment]
 
 // Resource naming with environment suffix
 var resourceNames = {
+  vnet: '${baseName}-vnet-${environment}'
+  containerAppsSubnet: 'container-apps-subnet'
+  privateEndpointSubnet: 'private-endpoint-subnet'
   containerEnv: '${baseName}-env-${environment}'
   containerApp: '${baseName}-app-${environment}'
-  storageAccount: '${baseName}st${environment}${uniqueString(resourceGroup().id)}'
+  storageAccount: take(toLower('${baseName}nfs${environment}${uniqueString(resourceGroup().id)}'), 24)
   keyVault: '${baseName}-kv-${environment}'
   acr: acrName != '' ? acrName : '${baseName}acr${environment}'
   logAnalytics: '${baseName}-logs-${environment}'
   appInsights: '${baseName}-insights-${environment}'
   managedIdentity: '${baseName}-identity-${environment}'
   fileShare: 'openclaw-data'
+  privateEndpoint: '${baseName}-storage-pe-${environment}'
+  privateDnsZone: 'privatelink.file.core.windows.net'
 }
 
 // Merge default tags with provided tags
@@ -103,7 +114,52 @@ var allTags = union({
 }, tags)
 
 // ============================================================================
-// MODULES
+// NETWORKING - VNet and Subnets for NFS
+// ============================================================================
+
+// Virtual Network
+resource vnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
+  name: resourceNames.vnet
+  location: location
+  tags: allTags
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        vnetAddressPrefix
+      ]
+    }
+    subnets: [
+      {
+        name: resourceNames.containerAppsSubnet
+        properties: {
+          addressPrefix: containerAppsSubnetPrefix
+          delegations: [
+            {
+              name: 'Microsoft.App.environments'
+              properties: {
+                serviceName: 'Microsoft.App/environments'
+              }
+            }
+          ]
+        }
+      }
+      {
+        name: resourceNames.privateEndpointSubnet
+        properties: {
+          addressPrefix: privateEndpointSubnetPrefix
+          privateEndpointNetworkPolicies: 'Disabled'
+        }
+      }
+    ]
+  }
+}
+
+// Reference to subnets
+var containerAppsSubnetId = '${vnet.id}/subnets/${resourceNames.containerAppsSubnet}'
+var privateEndpointSubnetId = '${vnet.id}/subnets/${resourceNames.privateEndpointSubnet}'
+
+// ============================================================================
+// MONITORING
 // ============================================================================
 
 // Log Analytics Workspace for monitoring
@@ -136,6 +192,10 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
+// ============================================================================
+// IDENTITY
+// ============================================================================
+
 // User-Assigned Managed Identity
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: resourceNames.managedIdentity
@@ -143,10 +203,11 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   tags: allTags
 }
 
+// ============================================================================
+// KEY VAULT
+// ============================================================================
+
 // Key Vault for secrets
-// Note: enablePurgeProtection cannot be disabled once enabled on an existing vault
-// For dev/staging, we simply don't specify it (defaults to false for new vaults)
-// For existing vaults with purge protection, this deployment will succeed since we're not trying to disable it
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: resourceNames.keyVault
   location: location
@@ -160,7 +221,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: environment == 'prod' ? 90 : 7
-    enablePurgeProtection: true // Always enable - cannot be disabled once set
+    enablePurgeProtection: true
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       defaultAction: 'Allow'
@@ -174,7 +235,7 @@ resource kvSecretsOfficerRole 'Microsoft.Authorization/roleAssignments@2022-04-0
   name: guid(keyVault.id, managedIdentity.id, 'Key Vault Secrets Officer')
   scope: keyVault
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7') // Key Vault Secrets Officer
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
@@ -200,29 +261,34 @@ resource gatewayTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if 
   }
 }
 
-// Storage Account for persistent data (name must be 3-24 chars, lowercase, no special chars)
+// ============================================================================
+// STORAGE - Premium FileStorage with NFS
+// ============================================================================
+
+// Premium FileStorage Account for NFS (no shared key auth needed)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: take(replace(toLower('${baseName}st${environment}${uniqueString(resourceGroup().id)}'), '-', ''), 24)
+  name: resourceNames.storageAccount
   location: location
   tags: allTags
   sku: {
-    name: config.storageSku
+    name: 'Premium_LRS'  // NFS requires Premium
   }
-  kind: 'StorageV2'
+  kind: 'FileStorage'  // NFS requires FileStorage kind
   properties: {
-    accessTier: 'Hot'
-    supportsHttpsTrafficOnly: true
+    accessTier: 'Premium'
+    supportsHttpsTrafficOnly: false  // NFS uses port 2049, not HTTPS
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: true // Required for Azure Files mounting
+    allowSharedKeyAccess: false  // Disable key-based auth (compliant with policy)
+    publicNetworkAccess: 'Disabled'  // Only accessible via private endpoint
     networkAcls: {
-      defaultAction: 'Allow'
+      defaultAction: 'Deny'
       bypass: 'AzureServices'
     }
   }
 }
 
-// File Service with explicit SMB settings
+// File Service for NFS
 resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-01-01' = {
   parent: storageAccount
   name: 'default'
@@ -238,28 +304,85 @@ resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-01-01'
   }
 }
 
-// File Share for OpenClaw data
+// NFS File Share
 resource fileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
   parent: fileService
   name: resourceNames.fileShare
   properties: {
     shareQuota: config.storageQuotaGb
-    accessTier: 'TransactionOptimized'
+    enabledProtocols: 'NFS'  // Enable NFS protocol
+    rootSquash: 'NoRootSquash'  // Allow root access from container
   }
 }
 
-// Storage Blob Data Contributor role for managed identity
-resource storageBlobRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, managedIdentity.id, 'Storage Blob Data Contributor')
-  scope: storageAccount
+// ============================================================================
+// PRIVATE ENDPOINT FOR STORAGE
+// ============================================================================
+
+// Private DNS Zone for Azure Files
+resource privateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+  name: resourceNames.privateDnsZone
+  location: 'global'
+  tags: allTags
+}
+
+// Link Private DNS Zone to VNet
+resource privateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  parent: privateDnsZone
+  name: '${resourceNames.vnet}-link'
+  location: 'global'
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
+    registrationEnabled: false
+    virtualNetwork: {
+      id: vnet.id
+    }
   }
 }
 
-// Container Apps Environment
+// Private Endpoint for Storage Account
+resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-05-01' = {
+  name: resourceNames.privateEndpoint
+  location: location
+  tags: allTags
+  properties: {
+    subnet: {
+      id: privateEndpointSubnetId
+    }
+    privateLinkServiceConnections: [
+      {
+        name: '${resourceNames.privateEndpoint}-connection'
+        properties: {
+          privateLinkServiceId: storageAccount.id
+          groupIds: [
+            'file'
+          ]
+        }
+      }
+    ]
+  }
+}
+
+// DNS Zone Group for Private Endpoint
+resource privateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-05-01' = {
+  parent: storagePrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-file-core-windows-net'
+        properties: {
+          privateDnsZoneId: privateDnsZone.id
+        }
+      }
+    ]
+  }
+}
+
+// ============================================================================
+// CONTAINER APPS ENVIRONMENT (with VNet)
+// ============================================================================
+
+// Container Apps Environment with VNet integration
 resource containerEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: resourceNames.containerEnv
   location: location
@@ -272,27 +395,39 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
+    vnetConfiguration: {
+      infrastructureSubnetId: containerAppsSubnetId
+      internal: false  // Still externally accessible via ingress
+    }
     zoneRedundant: enableZoneRedundancy
     daprAIInstrumentationKey: appInsights.properties.InstrumentationKey
   }
+  dependsOn: [
+    privateDnsZoneLink  // Ensure DNS is ready before Container Apps
+  ]
 }
 
-// Storage mount configuration
+// NFS Storage mount configuration (no account key needed!)
 resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerEnv
   name: 'openclaw-storage'
   properties: {
-    azureFile: {
-      accountName: storageAccount.name
-      accountKey: storageAccount.listKeys().keys[0].value
+    nfsAzureFile: {
+      server: '${storageAccount.name}.file.core.windows.net'
       shareName: resourceNames.fileShare
       accessMode: 'ReadWrite'
     }
   }
   dependsOn: [
-    fileShare  // Ensure file share is created before mounting
+    fileShare
+    storagePrivateEndpoint
+    privateEndpointDnsGroup
   ]
 }
+
+// ============================================================================
+// CONTAINER APP
+// ============================================================================
 
 // Container App
 resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
@@ -432,7 +567,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
       volumes: [
         {
           name: 'data'
-          storageType: 'AzureFile'
+          storageType: 'NfsAzureFile'  // NFS mount type
           storageName: 'openclaw-storage'
         }
       ]
@@ -482,6 +617,12 @@ output appInsightsConnectionString string = appInsights.properties.ConnectionStr
 
 @description('Resource Group Name')
 output resourceGroupName string = resourceGroup().name
+
+@description('VNet Name')
+output vnetName string = vnet.name
+
+@description('VNet ID')
+output vnetId string = vnet.id
 
 @description('Environment Configuration')
 output environmentConfig object = config

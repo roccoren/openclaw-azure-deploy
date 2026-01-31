@@ -140,6 +140,26 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 }
 
 // ============================================================================
+// CONTAINER REGISTRY ACCESS
+// ============================================================================
+
+// Reference existing ACR (if provided)
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (acrName != '') {
+  name: acrName
+}
+
+// AcrPull role for managed identity to pull images from ACR
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (acrName != '') {
+  name: guid(acr.id, managedIdentity.id, 'AcrPull')
+  scope: acr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ============================================================================
 // KEY VAULT
 // ============================================================================
 
@@ -371,6 +391,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     kvSecretsOfficerRole
     anthropicApiKeySecret
     gatewayTokenSecret
+    acrPullRole
   ]
 }
 

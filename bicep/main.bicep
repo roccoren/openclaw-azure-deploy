@@ -404,6 +404,12 @@ resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
       infrastructureSubnetId: containerAppsSubnetId
       internal: false  // Still externally accessible via ingress
     }
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
     zoneRedundant: enableZoneRedundancy
     daprAIInstrumentationKey: appInsights.properties.InstrumentationKey
   }

@@ -222,10 +222,20 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
 }
 
-// File Service for Azure Files
+// File Service with explicit SMB settings
 resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-01-01' = {
   parent: storageAccount
   name: 'default'
+  properties: {
+    protocolSettings: {
+      smb: {
+        versions: 'SMB3.0;SMB3.1.1'
+        authenticationMethods: 'NTLMv2;Kerberos'
+        kerberosTicketEncryption: 'RC4-HMAC;AES-256'
+        channelEncryption: 'AES-128-CCM;AES-128-GCM;AES-256-GCM'
+      }
+    }
+  }
 }
 
 // File Share for OpenClaw data
@@ -279,6 +289,9 @@ resource envStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
       accessMode: 'ReadWrite'
     }
   }
+  dependsOn: [
+    fileShare  // Ensure file share is created before mounting
+  ]
 }
 
 // Container App

@@ -356,17 +356,19 @@ users:
     groups: [sudo]
 
 runcmd:
-  - |
-    set -euxo pipefail
-    
-    echo "==> Creating OpenClaw config directory..."
-    mkdir -p /home/openclaw/.openclaw
-    
-    echo "==> Writing OpenClaw config..."
-    cat > /home/openclaw/.openclaw/openclaw.json << 'CONFIGEOF'
-    {{
-      "gateway": {{
-        "mode": "local",
+  - - /bin/bash
+    - -c
+    - |
+      set -euxo pipefail
+      
+      echo "==> Creating OpenClaw config directory..."
+      mkdir -p /home/openclaw/.openclaw
+      
+      echo "==> Writing OpenClaw config..."
+      cat > /home/openclaw/.openclaw/openclaw.json << 'CONFIGEOF'
+      {{
+        "gateway": {{
+          "mode": "local",
         "bind": "lan",
         "port": 18789,
         "auth": {{

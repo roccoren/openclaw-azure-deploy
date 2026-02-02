@@ -346,15 +346,18 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
         
         # Config JSON depends on tailscale mode
         if use_tailscale:
+            # Funnel requires password auth per OpenClaw docs
             config_json = f'''{{
   "gateway": {{
     "mode": "local",
-    "bind": "tailnet",
+    "bind": "loopback",
     "port": 18789,
-    "tailscale": "funnel",
+    "tailscale": {{
+      "mode": "funnel"
+    }},
     "auth": {{
-      "mode": "token",
-      "token": "{gateway_token}"
+      "mode": "password",
+      "password": "{gateway_token}"
     }}
   }},
   "agents": {{
@@ -823,6 +826,8 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
             print()
             print("  4. Get your Tailscale Funnel URL:")
             print("     sudo -u openclaw openclaw gateway status")
+            print()
+            print(f"  Gateway Password: {result['dashboard_url'].split('token=')[1]}")
         else:
             print("  📡 ACCESS (SSH tunnel required for dashboard):")
             print()
@@ -834,9 +839,9 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
             print()
             print("  OpenClaw is auto-started and listening on LAN.")
             print("  Check status: ssh <vm> 'sudo -u openclaw openclaw gateway status'")
+            print()
+            print(f"  Gateway Token: {result['dashboard_url'].split('token=')[1]}")
         
-        print()
-        print(f"  Gateway Token: {result['dashboard_url'].split('token=')[1]}")
         print()
 
 

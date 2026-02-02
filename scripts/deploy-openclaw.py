@@ -328,14 +328,15 @@ class VMDeployer:
         auth_setup = ""
         if auth_token:
             auth_setup = f'''
-      echo "==> Setting up model auth..."
-      sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept-risk \\
-        --workspace /data/workspace \\
-        --auth-choice token \\
-        --token-provider github-copilot \\
-        --token "{auth_token}"
+echo "==> Setting up model auth..."
+sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept-risk \\
+  --workspace /data/workspace \\
+  --auth-choice token \\
+  --token-provider github-copilot \\
+  --token "{auth_token}"
 '''
         
+        # Using runcmd with heredocs is more reliable than write_files
         return f'''#cloud-config
 package_update: true
 package_upgrade: true
@@ -348,83 +349,82 @@ users:
     home: /home/openclaw
     groups: [sudo]
 
-write_files:
-  - path: /home/openclaw/.openclaw/openclaw.json
-    owner: openclaw:openclaw
-    permissions: '0600'
-    content: |
-      {{
-        "gateway": {{
-          "mode": "local",
-          "bind": "lan",
-          "port": 18789,
-          "auth": {{
-            "mode": "token",
-            "token": "{gateway_token}"
-          }}
-        }},
-        "agents": {{
-          "defaults": {{
-            "workspace": "/data/workspace",
-            "model": {{
-              "primary": "github-copilot/claude-haiku-4.5"
-            }}
-          }}
-        }},
-        "browser": {{
-          "enabled": true,
-          "headless": true,
-          "noSandbox": true
-        }}
-      }}
-
-  - path: /etc/systemd/system/openclaw.service
-    permissions: '0644'
-    content: |
-      [Unit]
-      Description=OpenClaw Gateway
-      After=network.target
-
-      [Service]
-      Type=simple
-      User=openclaw
-      WorkingDirectory=/data/workspace
-      ExecStart=/usr/bin/openclaw gateway run
-      Restart=on-failure
-      RestartSec=10
-      Environment=HOME=/home/openclaw
-      Environment=NODE_ENV=production
-
-      [Install]
-      WantedBy=multi-user.target
-
-  - path: /opt/openclaw-setup.sh
-    permissions: '0755'
-    content: |
-      #!/bin/bash
-      set -euo pipefail
-      
-      echo "==> Installing Node.js 22.x..."
-      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-      apt-get install -y nodejs
-      
-      echo "==> Installing OpenClaw..."
-      npm install -g openclaw
-      
-      echo "==> Setting up workspace..."
-      mkdir -p /data/workspace
-      chown openclaw:openclaw /data/workspace
-      chown -R openclaw:openclaw /home/openclaw
-{auth_setup}
-      echo "==> Starting OpenClaw service..."
-      systemctl daemon-reload
-      systemctl enable openclaw
-      systemctl start openclaw
-      
-      echo "==> OpenClaw installation complete!"
-
 runcmd:
-  - bash /opt/openclaw-setup.sh
+  - |
+    set -euxo pipefail
+    
+    echo "==> Creating OpenClaw config directory..."
+    mkdir -p /home/openclaw/.openclaw
+    
+    echo "==> Writing OpenClaw config..."
+    cat > /home/openclaw/.openclaw/openclaw.json << 'CONFIGEOF'
+    {{
+      "gateway": {{
+        "mode": "local",
+        "bind": "lan",
+        "port": 18789,
+        "auth": {{
+          "mode": "token",
+          "token": "{gateway_token}"
+        }}
+      }},
+      "agents": {{
+        "defaults": {{
+          "workspace": "/data/workspace",
+          "model": {{
+            "primary": "github-copilot/claude-haiku-4.5"
+          }}
+        }}
+      }},
+      "browser": {{
+        "enabled": true,
+        "headless": true,
+        "noSandbox": true
+      }}
+    }}
+    CONFIGEOF
+    
+    echo "==> Writing systemd service..."
+    cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
+    [Unit]
+    Description=OpenClaw Gateway
+    After=network.target
+    
+    [Service]
+    Type=simple
+    User=openclaw
+    WorkingDirectory=/data/workspace
+    ExecStart=/usr/bin/openclaw gateway run
+    Restart=on-failure
+    RestartSec=10
+    Environment=HOME=/home/openclaw
+    Environment=NODE_ENV=production
+    
+    [Install]
+    WantedBy=multi-user.target
+    SERVICEEOF
+    
+    echo "==> Installing Node.js 22.x..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+    
+    echo "==> Installing OpenClaw..."
+    npm install -g openclaw
+    
+    echo "==> Setting up workspace..."
+    mkdir -p /data/workspace
+    chown openclaw:openclaw /data/workspace
+    chown -R openclaw:openclaw /home/openclaw
+    chmod 600 /home/openclaw/.openclaw/openclaw.json
+    
+    {auth_setup}
+    
+    echo "==> Starting OpenClaw service..."
+    systemctl daemon-reload
+    systemctl enable openclaw
+    systemctl start openclaw
+    
+    echo "==> OpenClaw installation complete!"
 
 final_message: "OpenClaw VM ready after $UPTIME seconds"
 '''

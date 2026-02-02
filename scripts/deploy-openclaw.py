@@ -39,6 +39,33 @@ from pathlib import Path
 from typing import Optional
 
 
+def find_ssh_public_key() -> str:
+    """Find an SSH public key, checking common locations."""
+    ssh_dir = Path.home() / ".ssh"
+    
+    # Check common key names in order of preference
+    key_names = [
+        "id_rsa.pub",
+        "id_ed25519.pub", 
+        "id_ecdsa.pub",
+        "id_dsa.pub",
+    ]
+    
+    for key_name in key_names:
+        key_path = ssh_dir / key_name
+        if key_path.exists():
+            return str(key_path)
+    
+    # Check for any .pub file
+    if ssh_dir.exists():
+        pub_files = list(ssh_dir.glob("*.pub"))
+        if pub_files:
+            return str(pub_files[0])
+    
+    # Fallback - will fail validation later
+    return str(ssh_dir / "id_rsa.pub")
+
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -59,7 +86,7 @@ class DeployConfig:
     subnet_prefix: str = ""  # Auto-calculated if not specified
     vnet_name: Optional[str] = None  # Existing VNet to reuse
     subnet_name: Optional[str] = None  # Existing subnet to reuse
-    ssh_key_path: str = field(default_factory=lambda: str(Path.home() / ".ssh" / "id_rsa.pub"))
+    ssh_key_path: str = field(default_factory=find_ssh_public_key)
     os_image: str = "Canonical:ubuntu-24_04-lts:server:latest"
     admin_username: str = "azureuser"
     auth_token: Optional[str] = None  # GitHub Copilot or other provider token
@@ -838,8 +865,8 @@ def parse_args() -> DeployConfig:
     vm_parser.add_argument("--subnet-prefix", default="",
                           help="Subnet address prefix (default: auto-calculated)")
     vm_parser.add_argument("--ssh-key", dest="ssh_key_path",
-                          default=str(Path.home() / ".ssh" / "id_rsa.pub"),
-                          help="Path to SSH public key")
+                          default=find_ssh_public_key(),
+                          help=f"Path to SSH public key (default: {find_ssh_public_key()})")
     vm_parser.add_argument("--admin-username", default=os.getenv("USER", "azureuser"),
                           help=f"VM admin username (default: {os.getenv('USER', 'azureuser')})")
     vm_parser.add_argument("--auth-token", dest="auth_token",

@@ -325,12 +325,23 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           ]
           probes: [
             {
+              type: 'Startup'
+              httpGet: {
+                path: '/health'
+                port: 18789
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 5
+              failureThreshold: 30  // ~150 seconds total startup time
+              timeoutSeconds: 5
+            }
+            {
               type: 'Liveness'
               httpGet: {
                 path: '/health'
                 port: 18789
               }
-              initialDelaySeconds: 60
+              initialDelaySeconds: 180  // Wait for startup to complete
               periodSeconds: 30
               failureThreshold: 3
               timeoutSeconds: 10
@@ -341,7 +352,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/health'
                 port: 18789
               }
-              initialDelaySeconds: 30
+              initialDelaySeconds: 180  // Wait for startup to complete
               periodSeconds: 10
               failureThreshold: 3
               timeoutSeconds: 5

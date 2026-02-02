@@ -346,8 +346,9 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
         config_json = f'''{{
   "gateway": {{
     "mode": "local",
-    "bind": "lan",
+    "bind": "tailnet",
     "port": 18789,
+    "tailscale": "funnel",
     "auth": {{
       "mode": "token",
       "token": "{gateway_token}"
@@ -368,10 +369,11 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
   }}
 }}'''
 
-        # Systemd service (no leading spaces)
+        # Systemd service (no leading spaces) - needs tailscaled
         systemd_service = '''[Unit]
 Description=OpenClaw Gateway
-After=network.target
+After=network.target tailscaled.service
+Wants=tailscaled.service
 
 [Service]
 Type=simple
@@ -389,6 +391,9 @@ WantedBy=multi-user.target'''
         # Setup script
         setup_script = f'''#!/bin/bash
 set -euxo pipefail
+
+echo "==> Installing Tailscale..."
+curl -fsSL https://tailscale.com/install.sh | sh
 
 echo "==> Creating OpenClaw config directory..."
 mkdir -p /home/openclaw/.openclaw
@@ -418,12 +423,13 @@ chmod 600 /home/openclaw/.openclaw/openclaw.json
 
 {auth_setup}
 
-echo "==> Starting OpenClaw service..."
-systemctl daemon-reload
-systemctl enable openclaw
-systemctl start openclaw
-
-echo "==> OpenClaw installation complete!"
+echo "==> NOTE: Tailscale requires authentication!"
+echo "==> After VM creation, SSH in and run:"
+echo "    sudo tailscale up"
+echo "==> Then restart OpenClaw:"
+echo "    sudo systemctl restart openclaw"
+echo ""
+echo "==> OpenClaw installation complete (Tailscale auth pending)!"
 '''
 
         # Indent the script content for YAML (6 spaces for content under write_files)
@@ -740,11 +746,23 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         print(f"  VNet:         {result['vnet_name']} ({result['vnet_prefix']})")
         print(f"  Subnet:       {result['subnet_name']} ({result['subnet_prefix']})")
         print()
-        print(f"  Dashboard:    {result['dashboard_url']}")
+        print("  ⚠️  NEXT STEPS (Tailscale auth required):")
         print()
-        print("  Note: OpenClaw is being installed via cloud-init.")
-        print("        It may take 2-3 minutes after VM creation to be ready.")
-        print("        Check status: ssh <vm> 'sudo systemctl status openclaw'")
+        print(f"  1. SSH into VM:")
+        print(f"     {result['ssh_command']}")
+        print()
+        print("  2. Authenticate Tailscale:")
+        print("     sudo tailscale up")
+        print()
+        print("  3. Start OpenClaw:")
+        print("     sudo systemctl daemon-reload")
+        print("     sudo systemctl enable openclaw")
+        print("     sudo systemctl start openclaw")
+        print()
+        print("  4. Get your Tailscale Funnel URL:")
+        print("     sudo -u openclaw openclaw gateway status")
+        print()
+        print(f"  Gateway Token: {result['dashboard_url'].split('token=')[1]}")
         print()
 
 

@@ -335,10 +335,12 @@ package_update: true
 package_upgrade: true
 
 users:
+  - default
   - name: openclaw
     shell: /bin/bash
     system: true
     home: /home/openclaw
+    groups: [sudo]
 
 write_files:
   - path: /home/openclaw/.openclaw/openclaw.json

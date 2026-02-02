@@ -30,6 +30,7 @@ Examples:
 import argparse
 import ipaddress
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -839,8 +840,8 @@ def parse_args() -> DeployConfig:
     vm_parser.add_argument("--ssh-key", dest="ssh_key_path",
                           default=str(Path.home() / ".ssh" / "id_rsa.pub"),
                           help="Path to SSH public key")
-    vm_parser.add_argument("--admin-username", default="azureuser",
-                          help="VM admin username (default: azureuser)")
+    vm_parser.add_argument("--admin-username", default=os.getenv("USER", "azureuser"),
+                          help=f"VM admin username (default: {os.getenv('USER', 'azureuser')})")
     vm_parser.add_argument("--auth-token", dest="auth_token",
                           help="GitHub Copilot or provider auth token for model access")
     

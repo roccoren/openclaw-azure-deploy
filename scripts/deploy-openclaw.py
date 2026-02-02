@@ -342,7 +342,93 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
   --token "{auth_token}"
 '''
         
-        # Using write_files for the script, then runcmd to execute it
+        # Config JSON (no leading spaces)
+        config_json = f'''{{
+  "gateway": {{
+    "mode": "local",
+    "bind": "lan",
+    "port": 18789,
+    "auth": {{
+      "mode": "token",
+      "token": "{gateway_token}"
+    }}
+  }},
+  "agents": {{
+    "defaults": {{
+      "workspace": "/data/workspace",
+      "model": {{
+        "primary": "github-copilot/claude-haiku-4.5"
+      }}
+    }}
+  }},
+  "browser": {{
+    "enabled": true,
+    "headless": true,
+    "noSandbox": true
+  }}
+}}'''
+
+        # Systemd service (no leading spaces)
+        systemd_service = '''[Unit]
+Description=OpenClaw Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=openclaw
+WorkingDirectory=/data/workspace
+ExecStart=/usr/bin/openclaw gateway run
+Restart=on-failure
+RestartSec=10
+Environment=HOME=/home/openclaw
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target'''
+
+        # Setup script
+        setup_script = f'''#!/bin/bash
+set -euxo pipefail
+
+echo "==> Creating OpenClaw config directory..."
+mkdir -p /home/openclaw/.openclaw
+
+echo "==> Writing OpenClaw config..."
+cat > /home/openclaw/.openclaw/openclaw.json << 'CONFIGEOF'
+{config_json}
+CONFIGEOF
+
+echo "==> Writing systemd service..."
+cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
+{systemd_service}
+SERVICEEOF
+
+echo "==> Installing Node.js 22.x..."
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y nodejs
+
+echo "==> Installing OpenClaw..."
+npm install -g openclaw
+
+echo "==> Setting up workspace..."
+mkdir -p /data/workspace
+chown openclaw:openclaw /data/workspace
+chown -R openclaw:openclaw /home/openclaw
+chmod 600 /home/openclaw/.openclaw/openclaw.json
+
+{auth_setup}
+
+echo "==> Starting OpenClaw service..."
+systemctl daemon-reload
+systemctl enable openclaw
+systemctl start openclaw
+
+echo "==> OpenClaw installation complete!"
+'''
+
+        # Indent the script content for YAML (6 spaces for content under write_files)
+        indented_script = '\n'.join('      ' + line if line else '' for line in setup_script.split('\n'))
+        
         return f'''#cloud-config
 package_update: true
 package_upgrade: true
@@ -359,81 +445,7 @@ write_files:
   - path: /opt/openclaw-setup.sh
     permissions: '0755'
     content: |
-      #!/bin/bash
-      set -euxo pipefail
-      
-      echo "==> Creating OpenClaw config directory..."
-      mkdir -p /home/openclaw/.openclaw
-      
-      echo "==> Writing OpenClaw config..."
-      cat > /home/openclaw/.openclaw/openclaw.json << 'CONFIGEOF'
-      {{
-        "gateway": {{
-          "mode": "local",
-          "bind": "lan",
-          "port": 18789,
-          "auth": {{
-            "mode": "token",
-            "token": "{gateway_token}"
-          }}
-        }},
-        "agents": {{
-          "defaults": {{
-            "workspace": "/data/workspace",
-            "model": {{
-              "primary": "github-copilot/claude-haiku-4.5"
-            }}
-          }}
-        }},
-        "browser": {{
-          "enabled": true,
-          "headless": true,
-          "noSandbox": true
-        }}
-      }}
-      CONFIGEOF
-      
-      echo "==> Writing systemd service..."
-      cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
-      [Unit]
-      Description=OpenClaw Gateway
-      After=network.target
-      
-      [Service]
-      Type=simple
-      User=openclaw
-      WorkingDirectory=/data/workspace
-      ExecStart=/usr/bin/openclaw gateway run
-      Restart=on-failure
-      RestartSec=10
-      Environment=HOME=/home/openclaw
-      Environment=NODE_ENV=production
-      
-      [Install]
-      WantedBy=multi-user.target
-      SERVICEEOF
-      
-      echo "==> Installing Node.js 22.x..."
-      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-      apt-get install -y nodejs
-      
-      echo "==> Installing OpenClaw..."
-      npm install -g openclaw
-      
-      echo "==> Setting up workspace..."
-      mkdir -p /data/workspace
-      chown openclaw:openclaw /data/workspace
-      chown -R openclaw:openclaw /home/openclaw
-      chmod 600 /home/openclaw/.openclaw/openclaw.json
-      
-      {auth_setup}
-      
-      echo "==> Starting OpenClaw service..."
-      systemctl daemon-reload
-      systemctl enable openclaw
-      systemctl start openclaw
-      
-      echo "==> OpenClaw installation complete!"
+{indented_script}
 
 runcmd:
   - /opt/openclaw-setup.sh

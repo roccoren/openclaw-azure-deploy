@@ -342,7 +342,7 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
   --token "{auth_token}"
 '''
         
-        # Using runcmd with heredocs is more reliable than write_files
+        # Using write_files for the script, then runcmd to execute it
         return f'''#cloud-config
 package_update: true
 package_upgrade: true
@@ -355,10 +355,11 @@ users:
     home: /home/openclaw
     groups: [sudo]
 
-runcmd:
-  - - /bin/bash
-    - -c
-    - |
+write_files:
+  - path: /opt/openclaw-setup.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
       set -euxo pipefail
       
       echo "==> Creating OpenClaw config directory..."
@@ -369,70 +370,73 @@ runcmd:
       {{
         "gateway": {{
           "mode": "local",
-        "bind": "lan",
-        "port": 18789,
-        "auth": {{
-          "mode": "token",
-          "token": "{gateway_token}"
-        }}
-      }},
-      "agents": {{
-        "defaults": {{
-          "workspace": "/data/workspace",
-          "model": {{
-            "primary": "github-copilot/claude-haiku-4.5"
+          "bind": "lan",
+          "port": 18789,
+          "auth": {{
+            "mode": "token",
+            "token": "{gateway_token}"
           }}
+        }},
+        "agents": {{
+          "defaults": {{
+            "workspace": "/data/workspace",
+            "model": {{
+              "primary": "github-copilot/claude-haiku-4.5"
+            }}
+          }}
+        }},
+        "browser": {{
+          "enabled": true,
+          "headless": true,
+          "noSandbox": true
         }}
-      }},
-      "browser": {{
-        "enabled": true,
-        "headless": true,
-        "noSandbox": true
       }}
-    }}
-    CONFIGEOF
-    
-    echo "==> Writing systemd service..."
-    cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
-    [Unit]
-    Description=OpenClaw Gateway
-    After=network.target
-    
-    [Service]
-    Type=simple
-    User=openclaw
-    WorkingDirectory=/data/workspace
-    ExecStart=/usr/bin/openclaw gateway run
-    Restart=on-failure
-    RestartSec=10
-    Environment=HOME=/home/openclaw
-    Environment=NODE_ENV=production
-    
-    [Install]
-    WantedBy=multi-user.target
-    SERVICEEOF
-    
-    echo "==> Installing Node.js 22.x..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-    apt-get install -y nodejs
-    
-    echo "==> Installing OpenClaw..."
-    npm install -g openclaw
-    
-    echo "==> Setting up workspace..."
-    mkdir -p /data/workspace
-    chown openclaw:openclaw /data/workspace
-    chown -R openclaw:openclaw /home/openclaw
-    chmod 600 /home/openclaw/.openclaw/openclaw.json
-    
-    {auth_setup}
-    
-    echo "==> Starting OpenClaw service..."
-    systemctl daemon-reload
-    systemctl enable openclaw
-    systemctl start openclaw
-    
-    echo "==> OpenClaw installation complete!"
+      CONFIGEOF
+      
+      echo "==> Writing systemd service..."
+      cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
+      [Unit]
+      Description=OpenClaw Gateway
+      After=network.target
+      
+      [Service]
+      Type=simple
+      User=openclaw
+      WorkingDirectory=/data/workspace
+      ExecStart=/usr/bin/openclaw gateway run
+      Restart=on-failure
+      RestartSec=10
+      Environment=HOME=/home/openclaw
+      Environment=NODE_ENV=production
+      
+      [Install]
+      WantedBy=multi-user.target
+      SERVICEEOF
+      
+      echo "==> Installing Node.js 22.x..."
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y nodejs
+      
+      echo "==> Installing OpenClaw..."
+      npm install -g openclaw
+      
+      echo "==> Setting up workspace..."
+      mkdir -p /data/workspace
+      chown openclaw:openclaw /data/workspace
+      chown -R openclaw:openclaw /home/openclaw
+      chmod 600 /home/openclaw/.openclaw/openclaw.json
+      
+      {auth_setup}
+      
+      echo "==> Starting OpenClaw service..."
+      systemctl daemon-reload
+      systemctl enable openclaw
+      systemctl start openclaw
+      
+      echo "==> OpenClaw installation complete!"
+
+runcmd:
+  - /opt/openclaw-setup.sh
 
 final_message: "OpenClaw VM ready after $UPTIME seconds"
 '''

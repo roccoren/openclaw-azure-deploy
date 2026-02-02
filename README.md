@@ -1,6 +1,10 @@
-# OpenClaw Azure Deployment
+# 🦞 OpenClaw Azure Deployment
+
+> **🤖 Built entirely by AI** — This project was created by [OpenClaw](https://openclaw.ai), an AI-powered assistant running Claude. Every script, configuration, and documentation file was generated through natural language conversations.
 
 Deploy OpenClaw to Azure VMs or Azure Container Apps with a single command.
+
+---
 
 ## 🚀 Quick Start
 
@@ -24,6 +28,8 @@ python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 --dry
 python scripts/deploy-openclaw.py aca --name my-openclaw --location westus2
 ```
 
+---
+
 ## 📋 Prerequisites
 
 - Python 3.8+
@@ -37,6 +43,30 @@ az login
 # Verify
 az account show
 ```
+
+---
+
+## 📁 Project Structure
+
+```
+openclaw-azure-deploy/
+├── scripts/
+│   ├── deploy-openclaw.py     # 🎯 Main deployment script (VM + ACA)
+│   └── legacy/                 # Old bash scripts (deprecated)
+├── bicep/                      # Azure Bicep templates (for ACA)
+│   ├── main.bicep
+│   └── parameters.*.json
+├── config/                     # Configuration templates
+│   ├── gateway-config.json
+│   └── channels.json
+├── docs/
+│   ├── azure-openclaw-architecture.md
+│   └── legacy/                 # Old documentation
+├── Dockerfile                  # Container image for ACA
+└── README.md
+```
+
+---
 
 ## ⚙️ VM Deployment Options
 
@@ -55,6 +85,8 @@ az account show
 | `--admin-username` | `$USER` | VM admin username |
 | `--dry-run` | false | Preview commands without executing |
 
+---
+
 ## ⚙️ Container Apps Options
 
 | Option | Default | Description |
@@ -67,31 +99,44 @@ az account show
 | `--min-replicas` | `1` | Minimum replicas |
 | `--max-replicas` | `1` | Maximum replicas |
 
+---
+
 ## 🔧 What Gets Created
 
 ### VM Deployment
 
-- **Resource Group:** `<name>-group`
-- **Virtual Network:** `<name>-vnet` (10.200.x.x/27, auto-incremented)
-- **Subnet:** `<name>-subnet` (/28)
-- **Network Security Group:** SSH (22) + OpenClaw (18789)
-- **Public IP:** Static
-- **VM:** Ubuntu 24.04 LTS with spot pricing
-- **OpenClaw:** Installed via cloud-init, runs as systemd service
+| Resource | Naming |
+|----------|--------|
+| Resource Group | `<name>-group` |
+| Virtual Network | `<name>-vnet` (10.200.x.x/27) |
+| Subnet | `<name>-subnet` (/28) |
+| NSG | `<name>-nsg` (SSH + OpenClaw ports) |
+| Public IP | `<name>-pip` (static) |
+| VM | `<name>-vm` (Ubuntu 24.04 LTS, spot) |
+
+OpenClaw is installed via **cloud-init** and runs as a **systemd service**.
 
 ### Container Apps Deployment
 
-- **Resource Group:** `<name>-group`
-- **Container Apps Environment**
-- **Container App:** OpenClaw with HTTPS ingress
-- **Log Analytics Workspace**
+| Resource | Naming |
+|----------|--------|
+| Resource Group | `<name>-group` |
+| Container Apps Environment | `<name>-env` |
+| Container App | `<name>-app` |
+| Log Analytics | `<name>-logs` |
+
+---
 
 ## 🌐 Network Configuration
 
-VNet addresses are auto-incremented in the `10.200.0.0/16` range:
-- First deployment: `10.200.0.0/27`
-- Second deployment: `10.200.0.32/27`
-- And so on...
+VNet addresses are **auto-incremented** in the `10.200.0.0/16` range:
+
+| Deployment | VNet CIDR |
+|------------|-----------|
+| 1st | `10.200.0.0/27` |
+| 2nd | `10.200.0.32/27` |
+| 3rd | `10.200.0.64/27` |
+| ... | ... |
 
 To reuse an existing VNet:
 ```bash
@@ -100,6 +145,8 @@ python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
   --vnet-name existing-vnet \
   --subnet-name existing-subnet
 ```
+
+---
 
 ## 🔑 Authentication
 
@@ -110,11 +157,13 @@ Dashboard: http://<public-ip>:18789/?token=<TOKEN>
 ```
 
 ### Model Auth (GitHub Copilot)
-Pass `--auth-token` to configure GitHub Copilot authentication during deployment:
+Pass `--auth-token` to configure GitHub Copilot authentication:
 ```bash
 python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
   --auth-token "ghu_xxxxxxxxxxxx"
 ```
+
+---
 
 ## 📊 Post-Deployment
 
@@ -134,46 +183,40 @@ sudo journalctl -u openclaw -f
 ```
 
 ### Access Dashboard
-Open the URL shown after deployment:
 ```
 http://<public-ip>:18789/?token=<TOKEN>
 ```
 
+---
+
 ## 💰 Cost Estimates
 
-### VM (Spot Pricing)
-| Resource | Monthly Cost |
-|----------|-------------|
+### VM (Spot Pricing) — Recommended
+| Resource | Monthly |
+|----------|---------|
 | VM (D2als_v6 spot) | ~$15-25 |
 | Disk (128 GB) | ~$10 |
 | Public IP | ~$3 |
 | **Total** | **~$28-38** |
 
 ### Container Apps
-| Resource | Monthly Cost |
-|----------|-------------|
+| Resource | Monthly |
+|----------|---------|
 | Container (1 vCPU, 2 GB) | ~$50 |
 | Log Analytics | ~$5 |
 | **Total** | **~$55** |
 
+---
+
 ## 🔒 Security
 
-- SSH key authentication (no passwords)
-- Network Security Group limits access to ports 22 and 18789
-- Gateway token required for dashboard access
-- OpenClaw runs as non-root `openclaw` user
-- Managed identity enabled on VM
+- ✅ SSH key authentication (no passwords)
+- ✅ NSG limits access to ports 22 and 18789
+- ✅ Gateway token required for dashboard
+- ✅ OpenClaw runs as non-root `openclaw` user
+- ✅ Managed identity enabled on VM
 
-## 📁 Repository Structure
-
-```
-openclaw-azure-deploy/
-├── scripts/
-│   └── deploy-openclaw.py    # Main deployment script
-├── bicep/                     # (Legacy) Bicep templates
-├── config/                    # Configuration templates
-└── README.md
-```
+---
 
 ## 🆘 Troubleshooting
 
@@ -189,18 +232,37 @@ sudo systemctl status openclaw
 sudo journalctl -u openclaw -n 100
 ```
 
-### Check if Node.js installed
+### Check versions
 ```bash
 node --version
 openclaw --version
 ```
 
-## 📞 Resources
+---
 
-- **OpenClaw Docs:** https://docs.openclaw.ai
-- **Azure CLI:** https://learn.microsoft.com/cli/azure
-- **Container Apps:** https://learn.microsoft.com/azure/container-apps
+## 🤖 About This Project
+
+This entire project — including the Python deployment script, cloud-init templates, documentation, and troubleshooting guides — was created by **OpenClaw**, an AI assistant powered by Claude.
+
+The development process involved:
+- Natural language conversations to define requirements
+- Iterative debugging and refinement
+- Real-world testing on Azure infrastructure
+
+**AI-generated. Human-guided. Production-ready.**
 
 ---
 
-**Status:** ✅ Ready to Deploy
+## 📞 Resources
+
+- **OpenClaw:** https://openclaw.ai
+- **OpenClaw Docs:** https://docs.openclaw.ai
+- **Azure CLI:** https://learn.microsoft.com/cli/azure
+- **Source:** https://github.com/roccoren/openclaw-azure-deploy
+
+---
+
+<p align="center">
+  <strong>🦞 Built with OpenClaw + Claude</strong><br>
+  <em>AI-powered infrastructure automation</em>
+</p>

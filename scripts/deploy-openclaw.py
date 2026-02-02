@@ -2,6 +2,9 @@
 """
 deploy-openclaw.py — Deploy OpenClaw to Azure Container Apps or Azure VM
 
+🤖 This script was created entirely by OpenClaw, an AI assistant powered by Claude.
+   AI-generated. Human-guided. Production-ready.
+
 Usage:
     python deploy-openclaw.py vm --name my-openclaw --location westus2
     python deploy-openclaw.py aca --name my-openclaw --location westus2
@@ -20,11 +23,14 @@ Examples:
     python deploy-openclaw.py vm --name my-openclaw --location westus2 --resource-group VMS-GROUP
 
     # Reuse existing VNet and subnet
-    python deploy-openclaw.py vm --name my-openclaw --location westus2 --resource-group VMS-GROUP \
+    python deploy-openclaw.py vm --name my-openclaw --location westus2 --resource-group VMS-GROUP \\
         --vnet-name existing-vnet --subnet-name existing-subnet
 
     # Dry run (preview commands)
     python deploy-openclaw.py vm --name test --location westus2 --dry-run
+
+Author: OpenClaw (AI) + Claude
+License: MIT
 """
 
 import argparse

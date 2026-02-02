@@ -342,8 +342,8 @@ start_gateway() {
     log_info "Starting OpenClaw gateway..."
     log_info "  Bind: $GATEWAY_BIND"
     log_info "  Port: $GATEWAY_PORT"
-    log_info "  Config: $GATEWAY_CONFIG"
-    log_info "  Workspace: $WORKSPACE_DIR"
+    log_info "  Working directory: $(pwd)"
+    log_info "  Config location: $GATEWAY_CONFIG"
     echo ""
 
     # Check config exists
@@ -355,7 +355,8 @@ start_gateway() {
     # Switch to non-root user for security (openclaw user, UID 1001)
     # Run gateway in foreground (dumb-init handles signals)
     # Use 'su' with - to start a login shell as the openclaw user
-    exec su - openclaw -c "openclaw gateway run --config $GATEWAY_CONFIG"
+    # The gateway will find openclaw.json in the current working directory (/data/workspace)
+    exec su - openclaw -c "cd /data/workspace && openclaw gateway run --verbose"
 }
 
 # ============================================================================

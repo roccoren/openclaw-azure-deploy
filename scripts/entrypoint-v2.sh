@@ -1,0 +1,361 @@
+#!/usr/bin/env bash
+# ============================================================================
+# Enhanced OpenClaw Container Entrypoint
+# ============================================================================
+# Reads mandatory configuration from Key Vault / environment variables,
+# generates configuration files, validates setup, then starts the gateway.
+# ============================================================================
+
+set -euo pipefail
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+CONFIG_DIR="${OPENCLAW_CONFIG:-/data/config}"
+WORKSPACE_DIR="${OPENCLAW_WORKSPACE:-/data/workspace}"
+LOGS_DIR="${OPENCLAW_LOGS:-/data/logs}"
+CACHE_DIR="${OPENCLAW_CACHE:-/data/cache}"
+
+GATEWAY_CONFIG="${CONFIG_DIR}/openclaw.json"
+CHANNELS_CONFIG="${CONFIG_DIR}/channels.json"
+
+# Defaults
+GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-0.0.0.0}"
+GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+LOG_LEVEL="${OPENCLAW_LOG_LEVEL:-info}"
+STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-120}"  # seconds
+
+# ============================================================================
+# LOGGING FUNCTIONS
+# ============================================================================
+
+log_info() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] $*"
+}
+
+log_warn() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [WARN] $*" >&2
+}
+
+log_error() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [ERROR] $*" >&2
+}
+
+log_success() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [SUCCESS] $*"
+}
+
+# ============================================================================
+# SETUP & VALIDATION
+# ============================================================================
+
+ensure_directories() {
+    log_info "Ensuring directories exist..."
+    mkdir -p "$CONFIG_DIR" "$WORKSPACE_DIR" "$LOGS_DIR" "$CACHE_DIR"
+    log_success "Directories ready"
+}
+
+read_env_or_keyvault() {
+    local env_var="$1"
+    local kv_secret="$2"
+    local required="${3:-false}"
+
+    # Try environment variable first
+    local value="${!env_var:-}"
+
+    # If not set and we can access Key Vault, try that
+    if [[ -z "$value" ]] && command -v az &> /dev/null; then
+        if [[ -n "${AZURE_KEYVAULT_NAME:-}" ]]; then
+            log_info "Reading $kv_secret from Key Vault..."
+            value=$(az keyvault secret show \
+                --vault-name "$AZURE_KEYVAULT_NAME" \
+                --name "$kv_secret" \
+                --query value \
+                --output tsv 2>/dev/null || echo "")
+        fi
+    fi
+
+    if [[ -z "$value" ]]; then
+        if [[ "$required" == "true" ]]; then
+            log_error "Required configuration missing: $env_var (or $kv_secret in Key Vault)"
+            return 1
+        else
+            log_warn "Optional configuration not set: $env_var"
+            return 0
+        fi
+    fi
+
+    echo "$value"
+}
+
+generate_gateway_token() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32
+    else
+        head -c 32 /dev/urandom | xxd -p -c 64
+    fi
+}
+
+validate_configuration() {
+    log_info "Validating configuration..."
+
+    # Check required directories are writable
+    for dir in "$CONFIG_DIR" "$WORKSPACE_DIR" "$LOGS_DIR" "$CACHE_DIR"; do
+        if ! [[ -w "$dir" ]]; then
+            log_error "Directory not writable: $dir"
+            return 1
+        fi
+    done
+
+    # Check gateway can bind to the port
+    if ! command -v nc >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
+        log_warn "Cannot validate port availability (nc/timeout not available)"
+    else
+        log_info "Checking port $GATEWAY_PORT is available..."
+        if ! nc -z 127.0.0.1 "$GATEWAY_PORT" 2>/dev/null; then
+            log_success "Port $GATEWAY_PORT is available"
+        else
+            log_error "Port $GATEWAY_PORT is already in use"
+            return 1
+        fi
+    fi
+
+    log_success "Configuration validated"
+}
+
+# ============================================================================
+# CONFIG GENERATION
+# ============================================================================
+
+generate_gateway_config() {
+    log_info "Generating gateway configuration..."
+
+    # Read required secrets
+    local gateway_token
+    gateway_token=$(read_env_or_keyvault "GATEWAY_TOKEN" "gateway-token" false)
+
+    # Generate token if not provided
+    if [[ -z "$gateway_token" ]]; then
+        log_info "Generating gateway token (no token provided)..."
+        gateway_token=$(generate_gateway_token)
+        log_warn "Generated token - save this for client configuration: $gateway_token"
+    fi
+
+    # Build auth block
+    local auth_block=""
+    if [[ -n "$gateway_token" ]]; then
+        auth_block="\"auth\": {\"mode\": \"token\", \"token\": \"${gateway_token}\"}"
+    else
+        auth_block="\"auth\": {\"mode\": \"anonymous\"}"
+    fi
+
+    # Build gateway config
+    local model_primary="${OPENCLAW_MODEL_PRIMARY:-github-copilot/claude-haiku-4.5}"
+    local model_backup="${OPENCLAW_MODEL_BACKUP:-}"
+
+    # Create gateway configuration file
+    cat > "$GATEWAY_CONFIG" <<'EOFCONFIG'
+{
+  "gateway": {
+    "mode": "local",
+    "bind": "OPENCLAW_GATEWAY_BIND",
+    "port": OPENCLAW_GATEWAY_PORT,
+    "logLevel": "OPENCLAW_LOG_LEVEL",
+    "cors": {
+      "enabled": true,
+      "origins": ["*"],
+      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "headers": ["Content-Type", "Authorization", "X-Gateway-Token"]
+    },
+    OPENCLAW_AUTH_BLOCK
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "OPENCLAW_WORKSPACE_DIR",
+      "model": {
+        "primary": "OPENCLAW_MODEL_PRIMARY"
+        OPENCLAW_MODEL_BACKUP_BLOCK
+      }
+    }
+  },
+  "workspace": "OPENCLAW_WORKSPACE_DIR",
+  "channels": "OPENCLAW_CHANNELS_CONFIG",
+  "browser": {
+    "enabled": true,
+    "executablePath": "/usr/bin/chromium",
+    "headless": true,
+    "args": [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-software-rasterizer"
+    ]
+  },
+  "memory": {
+    "enabled": true
+  },
+  "logging": {
+    "format": "json",
+    "timestamps": true,
+    "includeRequestId": true,
+    "redactSecrets": true,
+    "level": "OPENCLAW_LOG_LEVEL"
+  }
+}
+EOFCONFIG
+
+    # Apply substitutions
+    sed -i "s|OPENCLAW_GATEWAY_BIND|$GATEWAY_BIND|g" "$GATEWAY_CONFIG"
+    sed -i "s|OPENCLAW_GATEWAY_PORT|$GATEWAY_PORT|g" "$GATEWAY_CONFIG"
+    sed -i "s|OPENCLAW_LOG_LEVEL|$LOG_LEVEL|g" "$GATEWAY_CONFIG"
+    sed -i "s|OPENCLAW_WORKSPACE_DIR|$WORKSPACE_DIR|g" "$GATEWAY_CONFIG"
+    sed -i "s|OPENCLAW_MODEL_PRIMARY|$model_primary|g" "$GATEWAY_CONFIG"
+    sed -i "s|\"OPENCLAW_AUTH_BLOCK\"|$auth_block|g" "$GATEWAY_CONFIG"
+
+    # Handle optional backup model
+    if [[ -n "$model_backup" ]]; then
+        sed -i "s|\"OPENCLAW_MODEL_BACKUP_BLOCK\"|, \"backup\": \"$model_backup\"|g" "$GATEWAY_CONFIG"
+    else
+        sed -i 's|"OPENCLAW_MODEL_BACKUP_BLOCK"||g' "$GATEWAY_CONFIG"
+    fi
+
+    # Handle channels config
+    if [[ -f "$CHANNELS_CONFIG" ]]; then
+        sed -i "s|\"OPENCLAW_CHANNELS_CONFIG\"|\"$CHANNELS_CONFIG\"|g" "$GATEWAY_CONFIG"
+    else
+        sed -i 's|"OPENCLAW_CHANNELS_CONFIG"|{}|g' "$GATEWAY_CONFIG"
+    fi
+
+    log_success "Gateway configuration generated: $GATEWAY_CONFIG"
+}
+
+generate_channels_config() {
+    log_info "Generating channels configuration..."
+
+    # Only generate if file doesn't exist
+    if [[ -f "$CHANNELS_CONFIG" ]]; then
+        log_info "Channels config already exists, skipping generation"
+        return
+    fi
+
+    # Try to read channel configs from environment/Key Vault
+    local teams_config=""
+    local slack_config=""
+    local telegram_config=""
+
+    # Teams configuration
+    if [[ -n "${TEAMS_APP_ID:-}" ]]; then
+        local teams_app_id="$TEAMS_APP_ID"
+        local teams_app_password="${TEAMS_APP_PASSWORD:-}"
+        
+        if [[ -z "$teams_app_password" ]] && [[ -n "${AZURE_KEYVAULT_NAME:-}" ]]; then
+            teams_app_password=$(az keyvault secret show \
+                --vault-name "$AZURE_KEYVAULT_NAME" \
+                --name "teams-app-password" \
+                --query value \
+                --output tsv 2>/dev/null || echo "")
+        fi
+
+        if [[ -n "$teams_app_password" ]]; then
+            teams_config=$(cat <<EOF
+  "teams": {
+    "appId": "$teams_app_id",
+    "appPassword": "$teams_app_password",
+    "enabled": true
+  }
+EOF
+            )
+        fi
+    fi
+
+    # Slack configuration
+    if [[ -n "${SLACK_BOT_TOKEN:-}" ]]; then
+        slack_config=$(cat <<EOF
+  "slack": {
+    "botToken": "$SLACK_BOT_TOKEN",
+    "enabled": true
+  }
+EOF
+        )
+    fi
+
+    # Telegram configuration
+    if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+        telegram_config=$(cat <<EOF
+  "telegram": {
+    "botToken": "$TELEGRAM_BOT_TOKEN",
+    "enabled": true
+  }
+EOF
+        )
+    fi
+
+    # Build channels config
+    local channels_json="{"
+    if [[ -n "$teams_config" ]]; then
+        channels_json="${channels_json}${teams_config},"
+    fi
+    if [[ -n "$slack_config" ]]; then
+        channels_json="${channels_json}${slack_config},"
+    fi
+    if [[ -n "$telegram_config" ]]; then
+        channels_json="${channels_json}${telegram_config},"
+    fi
+    
+    # Remove trailing comma if configs exist
+    if [[ "$channels_json" != "{" ]]; then
+        channels_json="${channels_json%,}"
+    fi
+    channels_json="${channels_json}}"
+
+    echo "$channels_json" > "$CHANNELS_CONFIG"
+    log_success "Channels configuration generated: $CHANNELS_CONFIG"
+}
+
+# ============================================================================
+# STARTUP
+# ============================================================================
+
+start_gateway() {
+    log_info "Starting OpenClaw gateway..."
+    log_info "  Bind: $GATEWAY_BIND"
+    log_info "  Port: $GATEWAY_PORT"
+    log_info "  Config: $GATEWAY_CONFIG"
+    log_info "  Workspace: $WORKSPACE_DIR"
+    echo ""
+
+    # Check config exists
+    if [[ ! -f "$GATEWAY_CONFIG" ]]; then
+        log_error "Gateway config not found: $GATEWAY_CONFIG"
+        return 1
+    fi
+
+    # Start gateway in foreground (dumb-init handles signals)
+    exec openclaw gateway run --config "$GATEWAY_CONFIG"
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+main() {
+    log_info "OpenClaw Container Entrypoint v2"
+    log_info "Starting up..."
+    echo ""
+
+    # Setup
+    ensure_directories
+    validate_configuration || exit 1
+
+    # Generate configuration
+    generate_gateway_config
+    generate_channels_config
+
+    # Start
+    echo ""
+    start_gateway
+}
+
+main "$@"

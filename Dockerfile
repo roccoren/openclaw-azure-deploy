@@ -81,8 +81,8 @@ RUN npm install -g openclaw@${OPENCLAW_VERSION} --no-audit --no-fund \
 COPY --chown=openclaw:openclaw scripts/healthcheck.sh /usr/local/bin/healthcheck
 RUN chmod +x /usr/local/bin/healthcheck
 
-# Copy entrypoint script (as root so chmod works)
-COPY --chown=openclaw:openclaw scripts/entrypoint.sh /usr/local/bin/entrypoint
+# Copy enhanced entrypoint script (v2 with Key Vault support)
+COPY --chown=openclaw:openclaw scripts/entrypoint-v2.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
 # Set working directory

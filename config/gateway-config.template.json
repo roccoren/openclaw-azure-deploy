@@ -1,0 +1,79 @@
+{
+  "$schema": "https://raw.githubusercontent.com/openclaw/openclaw/main/schemas/gateway-config.schema.json",
+  "version": "1.0.0",
+  "gateway": {
+    "host": "${OPENCLAW_GATEWAY_BIND:0.0.0.0}",
+    "port": ${OPENCLAW_GATEWAY_PORT:18789},
+    "logLevel": "${OPENCLAW_LOG_LEVEL:info}",
+    "cors": {
+      "enabled": true,
+      "origins": ["*"],
+      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "headers": ["Content-Type", "Authorization", "X-Gateway-Token"]
+    }
+  },
+  "auth": {
+    "type": "token",
+    "tokenEnvVar": "GATEWAY_TOKEN",
+    "allowAnonymous": false
+  },
+  "workspace": {
+    "path": "${OPENCLAW_WORKSPACE:/data/workspace}",
+    "configPath": "${OPENCLAW_CONFIG:/data/config}",
+    "logsPath": "${OPENCLAW_LOGS:/data/logs}",
+    "cachePath": "${OPENCLAW_CACHE:/data/cache}"
+  },
+  "agents": {
+    "defaults": {
+      "model": "${OPENCLAW_MODEL_PRIMARY:github-copilot/claude-haiku-4.5}",
+      "maxTokens": 8192,
+      "temperature": 0.7,
+      "thinking": {
+        "enabled": false,
+        "level": "low"
+      }
+    }
+  },
+  "browser": {
+    "enabled": true,
+    "executablePath": "/usr/bin/chromium",
+    "headless": true,
+    "args": [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-software-rasterizer"
+    ]
+  },
+  "rateLimit": {
+    "enabled": true,
+    "windowMs": 60000,
+    "maxRequests": 100
+  },
+  "healthCheck": {
+    "enabled": true,
+    "path": "/health",
+    "interval": 30000
+  },
+  "metrics": {
+    "enabled": true,
+    "path": "/metrics"
+  },
+  "logging": {
+    "format": "json",
+    "timestamps": true,
+    "includeRequestId": true,
+    "redactSecrets": true,
+    "level": "${OPENCLAW_LOG_LEVEL:info}"
+  },
+  "azure": {
+    "enabled": true,
+    "useManagedIdentity": true,
+    "keyVaultIntegration": ${AZURE_KEYVAULT_ENABLED:true},
+    "applicationInsights": {
+      "enabled": true,
+      "connectionStringEnvVar": "APPLICATIONINSIGHTS_CONNECTION_STRING"
+    }
+  }
+}

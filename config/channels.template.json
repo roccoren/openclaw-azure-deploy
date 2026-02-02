@@ -1,0 +1,24 @@
+{
+  "teams": {
+    "appId": "${TEAMS_APP_ID:}",
+    "appPassword": "${TEAMS_APP_PASSWORD:}",
+    "enabled": ${TEAMS_ENABLED:false}
+  },
+  "slack": {
+    "botToken": "${SLACK_BOT_TOKEN:}",
+    "appToken": "${SLACK_APP_TOKEN:}",
+    "enabled": ${SLACK_ENABLED:false}
+  },
+  "telegram": {
+    "botToken": "${TELEGRAM_BOT_TOKEN:}",
+    "enabled": ${TELEGRAM_ENABLED:false}
+  },
+  "discord": {
+    "botToken": "${DISCORD_BOT_TOKEN:}",
+    "enabled": ${DISCORD_ENABLED:false}
+  },
+  "googlechat": {
+    "webhookUrl": "${GOOGLECHAT_WEBHOOK_URL:}",
+    "enabled": ${GOOGLECHAT_ENABLED:false}
+  }
+}

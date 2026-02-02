@@ -155,6 +155,8 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (
 // ============================================================================
 
 // Key Vault for secrets
+// NOTE: Once purge protection is enabled, it cannot be disabled. We always enable it
+// for safety, but this means the KV cannot be deleted for 90 days if purged.
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: resourceNames.keyVault
   location: location
@@ -169,7 +171,9 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: environment == 'prod' ? 90 : 7
-    enablePurgeProtection: environment == 'prod'
+    // IMPORTANT: Once enabled, purge protection cannot be disabled.
+    // We always enable it for safety. Once set, it's permanent for that vault.
+    enablePurgeProtection: true
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       defaultAction: 'Allow'

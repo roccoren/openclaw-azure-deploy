@@ -19,11 +19,16 @@ Examples:
     # Reuse existing resource group
     python deploy-openclaw.py vm --name my-openclaw --location westus2 --resource-group VMS-GROUP
 
+    # Reuse existing VNet and subnet
+    python deploy-openclaw.py vm --name my-openclaw --location westus2 --resource-group VMS-GROUP \
+        --vnet-name existing-vnet --subnet-name existing-subnet
+
     # Dry run (preview commands)
     python deploy-openclaw.py vm --name test --location westus2 --dry-run
 """
 
 import argparse
+import ipaddress
 import json
 import secrets
 import subprocess
@@ -48,8 +53,10 @@ class DeployConfig:
     # VM-specific
     use_spot: bool = True
     vm_size: str = "Standard_D2als_v6"
-    vnet_prefix: str = "10.200.0.0/27"
-    subnet_prefix: str = "10.200.0.0/28"
+    vnet_prefix: str = ""  # Auto-calculated if not specified
+    subnet_prefix: str = ""  # Auto-calculated if not specified
+    vnet_name: Optional[str] = None  # Existing VNet to reuse
+    subnet_name: Optional[str] = None  # Existing subnet to reuse
     ssh_key_path: str = field(default_factory=lambda: str(Path.home() / ".ssh" / "id_rsa.pub"))
     os_image: str = "Canonical:ubuntu-24_04-lts:server:latest"
     admin_username: str = "azureuser"
@@ -65,17 +72,26 @@ class DeployConfig:
     dry_run: bool = False
     verbose: bool = False
     
+    # Internal flags
+    _reuse_vnet: bool = field(default=False, init=False)
+    _reuse_subnet: bool = field(default=False, init=False)
+    
     def __post_init__(self):
         if not self.resource_group:
             self.resource_group = f"{self.name}-group"
+        
+        # Determine if reusing existing VNet/Subnet
+        if self.vnet_name and self.subnet_name:
+            self._reuse_vnet = True
+            self._reuse_subnet = True
+        elif self.vnet_name:
+            self._reuse_vnet = True
     
-    @property
-    def vnet_name(self) -> str:
-        return f"{self.name}-vnet"
+    def get_vnet_name(self) -> str:
+        return self.vnet_name or f"{self.name}-vnet"
     
-    @property
-    def subnet_name(self) -> str:
-        return f"{self.name}-subnet"
+    def get_subnet_name(self) -> str:
+        return self.subnet_name or f"{self.name}-subnet"
     
     @property
     def nsg_name(self) -> str:
@@ -141,12 +157,120 @@ class AzureCLI:
                 sys.exit(1)
             return None
     
-    def run_json(self, args: list[str]) -> Optional[dict]:
+    def run_json(self, args: list[str], check: bool = True) -> Optional[dict | list]:
         """Run an Azure CLI command and parse JSON output."""
-        output = self.run(args + ["-o", "json"], capture=True)
+        output = self.run(args + ["-o", "json"], capture=True, check=check)
         if output:
             return json.loads(output)
         return None
+
+
+# =============================================================================
+# VNet Address Manager
+# =============================================================================
+
+class VNetAddressManager:
+    """Manage VNet address space allocation."""
+    
+    BASE_NETWORK = "10.200.0.0/16"  # Base range for all VNets
+    VNET_PREFIX_LEN = 27  # /27 = 32 addresses per VNet
+    SUBNET_PREFIX_LEN = 28  # /28 = 16 addresses per subnet
+    
+    def __init__(self, az: AzureCLI, resource_group: str):
+        self.az = az
+        self.resource_group = resource_group
+    
+    def get_existing_vnet_prefixes(self) -> list[str]:
+        """Get all existing VNet address prefixes in the resource group."""
+        if self.az.dry_run:
+            return []
+        
+        result = self.az.run_json([
+            "network", "vnet", "list",
+            "--resource-group", self.resource_group,
+            "--query", "[].addressSpace.addressPrefixes[]"
+        ], check=False)
+        
+        if result and isinstance(result, list):
+            return result
+        return []
+    
+    def get_next_available_prefix(self) -> tuple[str, str]:
+        """
+        Find the next available /27 VNet prefix and /28 subnet prefix.
+        Returns (vnet_prefix, subnet_prefix).
+        """
+        existing_prefixes = self.get_existing_vnet_prefixes()
+        
+        # Parse existing networks
+        existing_networks = []
+        for prefix in existing_prefixes:
+            try:
+                existing_networks.append(ipaddress.ip_network(prefix))
+            except ValueError:
+                pass
+        
+        # Iterate through possible /27 blocks in 10.200.0.0/16
+        base_network = ipaddress.ip_network(self.BASE_NETWORK)
+        
+        for subnet in base_network.subnets(new_prefix=self.VNET_PREFIX_LEN):
+            # Check if this subnet overlaps with any existing
+            overlaps = False
+            for existing in existing_networks:
+                if subnet.overlaps(existing):
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                vnet_prefix = str(subnet)
+                # First /28 within the /27
+                subnet_network = list(subnet.subnets(new_prefix=self.SUBNET_PREFIX_LEN))[0]
+                subnet_prefix = str(subnet_network)
+                return vnet_prefix, subnet_prefix
+        
+        raise RuntimeError("No available VNet address space in 10.200.0.0/16")
+    
+    def get_next_subnet_in_vnet(self, vnet_name: str) -> str:
+        """Find the next available /28 subnet within an existing VNet."""
+        if self.az.dry_run:
+            return "10.200.0.16/28"  # Dummy for dry run
+        
+        # Get VNet info
+        vnet_info = self.az.run_json([
+            "network", "vnet", "show",
+            "--resource-group", self.resource_group,
+            "--name", vnet_name
+        ], check=False)
+        
+        if not vnet_info:
+            raise RuntimeError(f"VNet '{vnet_name}' not found in resource group '{self.resource_group}'")
+        
+        # Get VNet address space
+        vnet_prefixes = vnet_info.get("addressSpace", {}).get("addressPrefixes", [])
+        if not vnet_prefixes:
+            raise RuntimeError(f"VNet '{vnet_name}' has no address space")
+        
+        vnet_network = ipaddress.ip_network(vnet_prefixes[0])
+        
+        # Get existing subnets
+        existing_subnets = []
+        for subnet in vnet_info.get("subnets", []):
+            prefix = subnet.get("addressPrefix")
+            if prefix:
+                existing_subnets.append(ipaddress.ip_network(prefix))
+        
+        # Find next available /28
+        for subnet in vnet_network.subnets(new_prefix=self.SUBNET_PREFIX_LEN):
+            overlaps = False
+            for existing in existing_subnets:
+                if subnet.overlaps(existing):
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                return str(subnet)
+        
+        raise RuntimeError(f"No available subnet space in VNet '{vnet_name}'")
 
 
 # =============================================================================
@@ -242,17 +366,24 @@ echo "TOKEN=$TOKEN"
     def __init__(self, config: DeployConfig):
         self.config = config
         self.az = AzureCLI(dry_run=config.dry_run, verbose=config.verbose)
+        self.vnet_manager = VNetAddressManager(self.az, config.resource_group)
     
     def deploy(self) -> dict:
         """Deploy the VM and install OpenClaw."""
+        # Ensure resource group exists first (needed for VNet queries)
+        self._create_resource_group()
+        
+        # Resolve VNet/Subnet configuration
+        self._resolve_network_config()
+        
         print(f"==> Deploying OpenClaw to Azure VM")
         print(f"    Name:           {self.config.name}")
         print(f"    Location:       {self.config.location}")
         print(f"    Resource Group: {self.config.resource_group}")
         print(f"    VM Size:        {self.config.vm_size}")
         print(f"    Spot:           {self.config.use_spot}")
-        print(f"    VNet:           {self.config.vnet_prefix}")
-        print(f"    Subnet:         {self.config.subnet_prefix}")
+        print(f"    VNet:           {self.config.get_vnet_name()} ({self.config.vnet_prefix}){' [existing]' if self.config._reuse_vnet else ''}")
+        print(f"    Subnet:         {self.config.get_subnet_name()} ({self.config.subnet_prefix}){' [existing]' if self.config._reuse_subnet else ''}")
         print()
         
         # Validate SSH key
@@ -262,10 +393,14 @@ echo "TOKEN=$TOKEN"
                 print(f"Error: SSH key not found at {self.config.ssh_key_path}")
                 sys.exit(1)
         
-        # Create resources
-        self._create_resource_group()
-        self._create_vnet()
-        self._create_subnet()
+        # Create network resources (skip if reusing)
+        if not self.config._reuse_vnet:
+            self._create_vnet()
+        
+        if not self.config._reuse_subnet:
+            self._create_subnet()
+        
+        # Create remaining resources
         self._create_nsg()
         self._create_nsg_rules()
         self._create_public_ip()
@@ -287,6 +422,10 @@ echo "TOKEN=$TOKEN"
             "vm_name": self.config.vm_name,
             "resource_group": self.config.resource_group,
             "location": self.config.location,
+            "vnet_name": self.config.get_vnet_name(),
+            "vnet_prefix": self.config.vnet_prefix,
+            "subnet_name": self.config.get_subnet_name(),
+            "subnet_prefix": self.config.subnet_prefix,
             "public_ip": public_ip,
             "ssh_command": f"ssh {self.config.admin_username}@{public_ip}",
             "token": token,
@@ -296,8 +435,62 @@ echo "TOKEN=$TOKEN"
         self._print_summary(result)
         return result
     
+    def _resolve_network_config(self):
+        """Resolve VNet and subnet configuration."""
+        if self.config._reuse_vnet and self.config._reuse_subnet:
+            # Both specified - validate they exist
+            print(f"==> Using existing VNet: {self.config.vnet_name}")
+            print(f"==> Using existing subnet: {self.config.subnet_name}")
+            # Get subnet prefix for display
+            if not self.config.dry_run:
+                subnet_info = self.az.run_json([
+                    "network", "vnet", "subnet", "show",
+                    "--resource-group", self.config.resource_group,
+                    "--vnet-name", self.config.vnet_name,
+                    "--name", self.config.subnet_name
+                ], check=False)
+                if subnet_info:
+                    self.config.subnet_prefix = subnet_info.get("addressPrefix", "existing")
+                    # Get VNet prefix too
+                    vnet_info = self.az.run_json([
+                        "network", "vnet", "show",
+                        "--resource-group", self.config.resource_group,
+                        "--name", self.config.vnet_name
+                    ], check=False)
+                    if vnet_info:
+                        prefixes = vnet_info.get("addressSpace", {}).get("addressPrefixes", [])
+                        self.config.vnet_prefix = prefixes[0] if prefixes else "existing"
+        
+        elif self.config._reuse_vnet:
+            # Reuse VNet, create new subnet
+            print(f"==> Using existing VNet: {self.config.vnet_name}")
+            print(f"==> Finding next available subnet...")
+            self.config.subnet_prefix = self.vnet_manager.get_next_subnet_in_vnet(self.config.vnet_name)
+            # Get VNet prefix for display
+            if not self.config.dry_run:
+                vnet_info = self.az.run_json([
+                    "network", "vnet", "show",
+                    "--resource-group", self.config.resource_group,
+                    "--name", self.config.vnet_name
+                ], check=False)
+                if vnet_info:
+                    prefixes = vnet_info.get("addressSpace", {}).get("addressPrefixes", [])
+                    self.config.vnet_prefix = prefixes[0] if prefixes else "existing"
+        
+        else:
+            # Create new VNet and subnet
+            if not self.config.vnet_prefix:
+                print(f"==> Finding next available VNet address space...")
+                self.config.vnet_prefix, self.config.subnet_prefix = \
+                    self.vnet_manager.get_next_available_prefix()
+            elif not self.config.subnet_prefix:
+                # VNet prefix specified but not subnet - derive subnet
+                vnet_network = ipaddress.ip_network(self.config.vnet_prefix)
+                subnet_network = list(vnet_network.subnets(new_prefix=28))[0]
+                self.config.subnet_prefix = str(subnet_network)
+    
     def _create_resource_group(self):
-        print(f"==> Creating resource group: {self.config.resource_group}")
+        print(f"==> Creating/verifying resource group: {self.config.resource_group}")
         self.az.run([
             "group", "create",
             "--name", self.config.resource_group,
@@ -306,23 +499,23 @@ echo "TOKEN=$TOKEN"
         ], check=False)
     
     def _create_vnet(self):
-        print(f"==> Creating VNet: {self.config.vnet_name}")
+        print(f"==> Creating VNet: {self.config.get_vnet_name()} ({self.config.vnet_prefix})")
         self.az.run([
             "network", "vnet", "create",
             "--resource-group", self.config.resource_group,
-            "--name", self.config.vnet_name,
+            "--name", self.config.get_vnet_name(),
             "--address-prefix", self.config.vnet_prefix,
             "--location", self.config.location,
             "--output", "none"
         ])
     
     def _create_subnet(self):
-        print(f"==> Creating subnet: {self.config.subnet_name}")
+        print(f"==> Creating subnet: {self.config.get_subnet_name()} ({self.config.subnet_prefix})")
         self.az.run([
             "network", "vnet", "subnet", "create",
             "--resource-group", self.config.resource_group,
-            "--vnet-name", self.config.vnet_name,
-            "--name", self.config.subnet_name,
+            "--vnet-name", self.config.get_vnet_name(),
+            "--name", self.config.get_subnet_name(),
             "--address-prefix", self.config.subnet_prefix,
             "--output", "none"
         ])
@@ -385,8 +578,8 @@ echo "TOKEN=$TOKEN"
             "--resource-group", self.config.resource_group,
             "--name", self.config.nic_name,
             "--location", self.config.location,
-            "--vnet-name", self.config.vnet_name,
-            "--subnet", self.config.subnet_name,
+            "--vnet-name", self.config.get_vnet_name(),
+            "--subnet", self.config.get_subnet_name(),
             "--network-security-group", self.config.nsg_name,
             "--public-ip-address", self.config.pip_name,
             "--output", "none"
@@ -478,6 +671,8 @@ echo "TOKEN=$TOKEN"
         print(f"  VM:           {result['vm_name']}")
         print(f"  Public IP:    {result['public_ip']}")
         print(f"  SSH:          {result['ssh_command']}")
+        print(f"  VNet:         {result['vnet_name']} ({result['vnet_prefix']})")
+        print(f"  Subnet:       {result['subnet_name']} ({result['subnet_prefix']})")
         print()
         print(f"  Dashboard:    {result['dashboard_url']}")
         print()
@@ -609,7 +804,7 @@ def parse_args() -> DeployConfig:
     def add_common_args(p):
         p.add_argument("--name", required=True, help="Deployment name (used for RG, VM, etc.)")
         p.add_argument("--location", required=True, help="Azure region (e.g., westus2)")
-        p.add_argument("--resource-group", help="Existing RG to reuse (default: <name>-rg)")
+        p.add_argument("--resource-group", help="Existing RG to reuse (default: <name>-group)")
         p.add_argument("--dry-run", action="store_true", help="Show commands without executing")
         p.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     
@@ -622,10 +817,12 @@ def parse_args() -> DeployConfig:
                           help="Use regular VM pricing")
     vm_parser.add_argument("--vm-size", default="Standard_D2als_v6",
                           help="VM size (default: Standard_D2als_v6)")
-    vm_parser.add_argument("--vnet-prefix", default="10.200.0.0/27",
-                          help="VNet address prefix (default: 10.200.0.0/27)")
-    vm_parser.add_argument("--subnet-prefix", default="10.200.0.0/28",
-                          help="Subnet address prefix (default: 10.200.0.0/28)")
+    vm_parser.add_argument("--vnet-name", help="Existing VNet name to reuse")
+    vm_parser.add_argument("--subnet-name", help="Existing subnet name to reuse (requires --vnet-name)")
+    vm_parser.add_argument("--vnet-prefix", default="",
+                          help="VNet address prefix (default: auto-increment in 10.200.x.x/27)")
+    vm_parser.add_argument("--subnet-prefix", default="",
+                          help="Subnet address prefix (default: auto-calculated)")
     vm_parser.add_argument("--ssh-key", dest="ssh_key_path",
                           default=str(Path.home() / ".ssh" / "id_rsa.pub"),
                           help="Path to SSH public key")
@@ -646,6 +843,11 @@ def parse_args() -> DeployConfig:
     
     args = parser.parse_args()
     
+    # Validate VM args
+    if args.target == "vm":
+        if args.subnet_name and not args.vnet_name:
+            parser.error("--subnet-name requires --vnet-name")
+    
     # Convert to DeployConfig
     config_kwargs = {
         "target": args.target,
@@ -660,6 +862,8 @@ def parse_args() -> DeployConfig:
         config_kwargs.update({
             "use_spot": args.use_spot,
             "vm_size": args.vm_size,
+            "vnet_name": args.vnet_name,
+            "subnet_name": args.subnet_name,
             "vnet_prefix": args.vnet_prefix,
             "subnet_prefix": args.subnet_prefix,
             "ssh_key_path": args.ssh_key_path,

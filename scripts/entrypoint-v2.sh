@@ -16,6 +16,7 @@ CONFIG_DIR="${OPENCLAW_CONFIG:-/data/config}"
 WORKSPACE_DIR="${OPENCLAW_WORKSPACE:-/data/workspace}"
 LOGS_DIR="${OPENCLAW_LOGS:-/data/logs}"
 CACHE_DIR="${OPENCLAW_CACHE:-/data/cache}"
+STATE_DIR="${OPENCLAW_STATE_DIR:-/home/openclaw/.openclaw}"
 
 # Gateway config must be in workspace directory for openclaw to find it
 GATEWAY_CONFIG="${WORKSPACE_DIR}/openclaw.json"
@@ -343,8 +344,9 @@ start_gateway() {
     log_info "Starting OpenClaw gateway..."
     log_info "  Bind: $GATEWAY_BIND"
     log_info "  Port: $GATEWAY_PORT"
-    log_info "  Working directory: $(pwd)"
-    log_info "  Config location: $GATEWAY_CONFIG"
+    log_info "  Config file: $GATEWAY_CONFIG"
+    log_info "  State dir: $STATE_DIR"
+    log_info "  Workspace: $WORKSPACE_DIR"
     echo ""
 
     # Check config exists
@@ -353,11 +355,25 @@ start_gateway() {
         return 1
     fi
 
+    # Copy config to the openclaw home directory where it expects it
+    local OPENCLAW_HOME="/home/openclaw/.openclaw"
+    mkdir -p "$OPENCLAW_HOME"
+    cp "$GATEWAY_CONFIG" "$OPENCLAW_HOME/openclaw.json"
+    if [[ -f "$CHANNELS_CONFIG" ]]; then
+        cp "$CHANNELS_CONFIG" "$OPENCLAW_HOME/channels.json"
+    fi
+    chown -R 1001:1001 "$OPENCLAW_HOME"
+    log_success "Config copied to $OPENCLAW_HOME/openclaw.json"
+
     # Switch to non-root user for security (openclaw user, UID 1001)
     # Run gateway in foreground (dumb-init handles signals)
-    # Use 'su' with - to start a login shell as the openclaw user
-    # The gateway will find openclaw.json in the current working directory (/data/workspace)
-    exec su - openclaw -c "cd /data/workspace && openclaw gateway run --verbose"
+    # Set OPENCLAW_STATE_DIR so gateway can find its config and state
+    exec su - openclaw -c "
+        export OPENCLAW_STATE_DIR=$OPENCLAW_HOME
+        export OPENCLAW_GATEWAY_PORT=$GATEWAY_PORT
+        cd $WORKSPACE_DIR
+        openclaw gateway run --verbose --bind lan --port $GATEWAY_PORT
+    "
 }
 
 # ============================================================================

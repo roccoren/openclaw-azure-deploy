@@ -373,6 +373,20 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
       }}
     }}
   }},
+  "channels": {{
+    "discord": {{
+      "enabled": true
+    }},
+    "msteams": {{
+      "enabled": true
+    }},
+    "slack": {{
+      "enabled": true
+    }},
+    "telegram": {{
+      "enabled": true
+    }}
+  }},
   "browser": {{
     "enabled": true,
     "headless": true,
@@ -396,6 +410,20 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
       "model": {{
         "primary": "github-copilot/claude-haiku-4.5"
       }}
+    }}
+  }},
+  "channels": {{
+    "discord": {{
+      "enabled": true
+    }},
+    "msteams": {{
+      "enabled": true
+    }},
+    "slack": {{
+      "enabled": true
+    }},
+    "telegram": {{
+      "enabled": true
     }}
   }},
   "browser": {{
@@ -498,6 +526,10 @@ mkdir -p /data/workspace
 chown openclaw:openclaw /data/workspace
 chown -R openclaw:openclaw /home/openclaw
 chmod 600 /home/openclaw/.openclaw/openclaw.json
+
+echo "==> Configuring passwordless sudo for openclaw user..."
+echo 'openclaw ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/openclaw
+chmod 440 /etc/sudoers.d/openclaw
 
 {auth_setup}
 {service_start}

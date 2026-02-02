@@ -96,6 +96,7 @@ class DeployConfig:
     os_image: str = "Canonical:ubuntu-24_04-lts:server:latest"
     admin_username: str = "azureuser"
     auth_token: Optional[str] = None  # GitHub Copilot or other provider token
+    use_tailscale: bool = False  # Use Tailscale Funnel for HTTPS
     
     # ACA-specific
     aca_cpu: float = 1.0
@@ -323,12 +324,13 @@ class VMDeployer:
     """Deploy OpenClaw to an Azure VM."""
     
     @staticmethod
-    def generate_cloud_init(gateway_token: str, auth_token: Optional[str] = None) -> str:
+    def generate_cloud_init(gateway_token: str, auth_token: Optional[str] = None, use_tailscale: bool = False) -> str:
         """Generate cloud-init script with embedded tokens.
         
         Args:
             gateway_token: Token for gateway auth
             auth_token: Optional GitHub Copilot or other provider token for model auth
+            use_tailscale: If True, use Tailscale Funnel for HTTPS. Otherwise use LAN binding.
         """
         # Build auth setup command if token provided
         auth_setup = ""
@@ -342,8 +344,9 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
   --token "{auth_token}"
 '''
         
-        # Config JSON (no leading spaces)
-        config_json = f'''{{
+        # Config JSON depends on tailscale mode
+        if use_tailscale:
+            config_json = f'''{{
   "gateway": {{
     "mode": "local",
     "bind": "tailnet",
@@ -368,9 +371,35 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
     "noSandbox": true
   }}
 }}'''
+        else:
+            config_json = f'''{{
+  "gateway": {{
+    "mode": "local",
+    "bind": "lan",
+    "port": 18789,
+    "auth": {{
+      "mode": "token",
+      "token": "{gateway_token}"
+    }}
+  }},
+  "agents": {{
+    "defaults": {{
+      "workspace": "/data/workspace",
+      "model": {{
+        "primary": "github-copilot/claude-haiku-4.5"
+      }}
+    }}
+  }},
+  "browser": {{
+    "enabled": true,
+    "headless": true,
+    "noSandbox": true
+  }}
+}}'''
 
-        # Systemd service (no leading spaces) - needs tailscaled
-        systemd_service = '''[Unit]
+        # Systemd service
+        if use_tailscale:
+            systemd_service = '''[Unit]
 Description=OpenClaw Gateway
 After=network.target tailscaled.service
 Wants=tailscaled.service
@@ -387,14 +416,51 @@ Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target'''
+        else:
+            systemd_service = '''[Unit]
+Description=OpenClaw Gateway
+After=network.target
 
-        # Setup script
-        setup_script = f'''#!/bin/bash
-set -euxo pipefail
+[Service]
+Type=simple
+User=openclaw
+WorkingDirectory=/data/workspace
+ExecStart=/usr/bin/openclaw gateway run
+Restart=on-failure
+RestartSec=10
+Environment=HOME=/home/openclaw
+Environment=NODE_ENV=production
 
+[Install]
+WantedBy=multi-user.target'''
+
+        # Setup script - Tailscale install only if needed
+        if use_tailscale:
+            tailscale_install = '''
 echo "==> Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh
+'''
+            service_start = '''
+echo "==> NOTE: Tailscale requires authentication!"
+echo "==> After VM creation, SSH in and run:"
+echo "    sudo tailscale up"
+echo "==> Then start OpenClaw:"
+echo "    sudo systemctl daemon-reload"
+echo "    sudo systemctl enable openclaw"
+echo "    sudo systemctl start openclaw"
+'''
+        else:
+            tailscale_install = ""
+            service_start = '''
+echo "==> Starting OpenClaw service..."
+systemctl daemon-reload
+systemctl enable openclaw
+systemctl start openclaw
+'''
 
+        setup_script = f'''#!/bin/bash
+set -euxo pipefail
+{tailscale_install}
 echo "==> Creating OpenClaw config directory..."
 mkdir -p /home/openclaw/.openclaw
 
@@ -422,14 +488,8 @@ chown -R openclaw:openclaw /home/openclaw
 chmod 600 /home/openclaw/.openclaw/openclaw.json
 
 {auth_setup}
-
-echo "==> NOTE: Tailscale requires authentication!"
-echo "==> After VM creation, SSH in and run:"
-echo "    sudo tailscale up"
-echo "==> Then restart OpenClaw:"
-echo "    sudo systemctl restart openclaw"
-echo ""
-echo "==> OpenClaw installation complete (Tailscale auth pending)!"
+{service_start}
+echo "==> OpenClaw installation complete!"
 '''
 
         # Indent the script content for YAML (6 spaces for content under write_files)
@@ -684,7 +744,7 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         print(f"==> Creating VM: {self.config.vm_name} (with cloud-init)")
         
         # Generate cloud-init script
-        cloud_init = self.generate_cloud_init(self.token, self.config.auth_token)
+        cloud_init = self.generate_cloud_init(self.token, self.config.auth_token, self.config.use_tailscale)
         
         # Write cloud-init to temp file
         import tempfile
@@ -746,21 +806,35 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         print(f"  VNet:         {result['vnet_name']} ({result['vnet_prefix']})")
         print(f"  Subnet:       {result['subnet_name']} ({result['subnet_prefix']})")
         print()
-        print("  ⚠️  NEXT STEPS (Tailscale auth required):")
-        print()
-        print(f"  1. SSH into VM:")
-        print(f"     {result['ssh_command']}")
-        print()
-        print("  2. Authenticate Tailscale:")
-        print("     sudo tailscale up")
-        print()
-        print("  3. Start OpenClaw:")
-        print("     sudo systemctl daemon-reload")
-        print("     sudo systemctl enable openclaw")
-        print("     sudo systemctl start openclaw")
-        print()
-        print("  4. Get your Tailscale Funnel URL:")
-        print("     sudo -u openclaw openclaw gateway status")
+        
+        if self.config.use_tailscale:
+            print("  ⚠️  NEXT STEPS (Tailscale auth required):")
+            print()
+            print(f"  1. SSH into VM:")
+            print(f"     {result['ssh_command']}")
+            print()
+            print("  2. Authenticate Tailscale:")
+            print("     sudo tailscale up")
+            print()
+            print("  3. Start OpenClaw:")
+            print("     sudo systemctl daemon-reload")
+            print("     sudo systemctl enable openclaw")
+            print("     sudo systemctl start openclaw")
+            print()
+            print("  4. Get your Tailscale Funnel URL:")
+            print("     sudo -u openclaw openclaw gateway status")
+        else:
+            print("  📡 ACCESS (SSH tunnel required for dashboard):")
+            print()
+            print(f"  1. Create SSH tunnel:")
+            print(f"     ssh -L 18789:localhost:18789 {self.config.admin_username}@{result['public_ip']}")
+            print()
+            print(f"  2. Open dashboard:")
+            print(f"     http://localhost:18789/?token={result['dashboard_url'].split('token=')[1]}")
+            print()
+            print("  OpenClaw is auto-started and listening on LAN.")
+            print("  Check status: ssh <vm> 'sudo -u openclaw openclaw gateway status'")
+        
         print()
         print(f"  Gateway Token: {result['dashboard_url'].split('token=')[1]}")
         print()
@@ -920,6 +994,8 @@ def parse_args() -> DeployConfig:
                           help=f"VM admin username (default: {os.getenv('USER', 'azureuser')})")
     vm_parser.add_argument("--auth-token", dest="auth_token",
                           help="GitHub Copilot or provider auth token for model access")
+    vm_parser.add_argument("--tailscale", dest="use_tailscale", action="store_true",
+                          help="Use Tailscale Funnel for HTTPS (requires manual auth after deploy)")
     
     # ACA subcommand
     aca_parser = subparsers.add_parser("aca", help="Deploy to Azure Container Apps")
@@ -962,6 +1038,7 @@ def parse_args() -> DeployConfig:
             "ssh_key_path": args.ssh_key_path,
             "admin_username": args.admin_username,
             "auth_token": args.auth_token,
+            "use_tailscale": args.use_tailscale,
         })
     elif args.target == "aca":
         config_kwargs.update({

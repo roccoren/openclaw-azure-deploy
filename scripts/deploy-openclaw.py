@@ -280,93 +280,105 @@ class VNetAddressManager:
 class VMDeployer:
     """Deploy OpenClaw to an Azure VM."""
     
-    INSTALL_SCRIPT = '''#!/bin/bash
-set -euo pipefail
+    @staticmethod
+    def generate_cloud_init(token: str) -> str:
+        """Generate cloud-init script with embedded token."""
+        return f'''#cloud-config
+package_update: true
+package_upgrade: true
 
-echo "==> Updating system..."
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+users:
+  - name: openclaw
+    shell: /bin/bash
+    system: true
+    home: /home/openclaw
 
-echo "==> Installing Node.js 22.x..."
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
+write_files:
+  - path: /home/openclaw/.openclaw/openclaw.json
+    owner: openclaw:openclaw
+    permissions: '0600'
+    content: |
+      {{
+        "gateway": {{
+          "mode": "local",
+          "bind": "lan",
+          "port": 18789,
+          "auth": {{
+            "mode": "token",
+            "token": "{token}"
+          }}
+        }},
+        "agents": {{
+          "defaults": {{
+            "workspace": "/data/workspace",
+            "model": {{
+              "primary": "github-copilot/claude-haiku-4.5"
+            }}
+          }}
+        }},
+        "browser": {{
+          "enabled": true,
+          "headless": true,
+          "noSandbox": true
+        }}
+      }}
 
-echo "==> Installing OpenClaw..."
-npm install -g openclaw
+  - path: /etc/systemd/system/openclaw.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=OpenClaw Gateway
+      After=network.target
 
-echo "==> Creating openclaw user..."
-useradd -m -s /bin/bash openclaw || true
+      [Service]
+      Type=simple
+      User=openclaw
+      WorkingDirectory=/data/workspace
+      ExecStart=/usr/bin/openclaw gateway start --foreground
+      Restart=on-failure
+      RestartSec=10
+      Environment=HOME=/home/openclaw
+      Environment=NODE_ENV=production
 
-echo "==> Setting up workspace..."
-mkdir -p /data/workspace
-chown openclaw:openclaw /data/workspace
+      [Install]
+      WantedBy=multi-user.target
 
-echo "==> Configuring OpenClaw..."
-mkdir -p /home/openclaw/.openclaw
-TOKEN=$(openssl rand -hex 24)
+  - path: /opt/openclaw-setup.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      echo "==> Installing Node.js 22.x..."
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y nodejs
+      
+      echo "==> Installing OpenClaw..."
+      npm install -g openclaw
+      
+      echo "==> Setting up workspace..."
+      mkdir -p /data/workspace
+      chown openclaw:openclaw /data/workspace
+      chown -R openclaw:openclaw /home/openclaw
+      
+      echo "==> Starting OpenClaw service..."
+      systemctl daemon-reload
+      systemctl enable openclaw
+      systemctl start openclaw
+      
+      echo "==> OpenClaw installation complete!"
 
-cat > /home/openclaw/.openclaw/openclaw.json << EOFCONFIG
-{
-  "gateway": {
-    "mode": "local",
-    "bind": "lan",
-    "port": 18789,
-    "auth": {
-      "mode": "token",
-      "token": "$TOKEN"
-    }
-  },
-  "agents": {
-    "defaults": {
-      "workspace": "/data/workspace",
-      "model": {
-        "primary": "github-copilot/claude-haiku-4.5"
-      }
-    }
-  },
-  "browser": {
-    "enabled": true,
-    "headless": true,
-    "noSandbox": true
-  }
-}
-EOFCONFIG
+runcmd:
+  - bash /opt/openclaw-setup.sh
 
-chown -R openclaw:openclaw /home/openclaw/.openclaw
-
-echo "==> Creating systemd service..."
-cat > /etc/systemd/system/openclaw.service << 'EOFSVC'
-[Unit]
-Description=OpenClaw Gateway
-After=network.target
-
-[Service]
-Type=simple
-User=openclaw
-WorkingDirectory=/data/workspace
-ExecStart=/usr/bin/openclaw gateway start --foreground
-Restart=on-failure
-RestartSec=10
-Environment=HOME=/home/openclaw
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target
-EOFSVC
-
-echo "==> Starting OpenClaw service..."
-systemctl daemon-reload
-systemctl enable openclaw
-systemctl start openclaw
-
-echo "==> Installation complete!"
-echo "TOKEN=$TOKEN"
+final_message: "OpenClaw VM ready after $UPTIME seconds"
 '''
 
     def __init__(self, config: DeployConfig):
         self.config = config
         self.az = AzureCLI(dry_run=config.dry_run, verbose=config.verbose)
         self.vnet_manager = VNetAddressManager(self.az, config.resource_group)
+        self.token = secrets.token_hex(24)  # Generate token upfront
     
     def deploy(self) -> dict:
         """Deploy the VM and install OpenClaw."""
@@ -410,12 +422,10 @@ echo "TOKEN=$TOKEN"
         # Get public IP
         public_ip = self._get_public_ip()
         
-        # Install OpenClaw
-        if not self.config.dry_run and public_ip:
-            token = self._install_openclaw(public_ip)
-        else:
-            token = "<generated-on-install>"
-            public_ip = public_ip or "<public-ip>"
+        if not public_ip and not self.config.dry_run:
+            public_ip = "<pending>"
+        elif not public_ip:
+            public_ip = "<public-ip>"
         
         result = {
             "target": "vm",
@@ -428,8 +438,8 @@ echo "TOKEN=$TOKEN"
             "subnet_prefix": self.config.subnet_prefix,
             "public_ip": public_ip,
             "ssh_command": f"ssh {self.config.admin_username}@{public_ip}",
-            "token": token,
-            "dashboard_url": f"http://{public_ip}:{self.config.gateway_port}/?token={token}",
+            "token": self.token,
+            "dashboard_url": f"http://{public_ip}:{self.config.gateway_port}/?token={self.token}",
         }
         
         self._print_summary(result)
@@ -586,29 +596,46 @@ echo "TOKEN=$TOKEN"
         ])
     
     def _create_vm(self):
-        print(f"==> Creating VM: {self.config.vm_name}")
-        cmd = [
-            "vm", "create",
-            "--resource-group", self.config.resource_group,
-            "--name", self.config.vm_name,
-            "--location", self.config.location,
-            "--nics", self.config.nic_name,
-            "--image", self.config.os_image,
-            "--size", self.config.vm_size,
-            "--admin-username", self.config.admin_username,
-            "--ssh-key-value", self.config.ssh_key_path,
-            "--assign-identity",
-            "--output", "none"
-        ]
+        print(f"==> Creating VM: {self.config.vm_name} (with cloud-init)")
         
-        if self.config.use_spot:
-            cmd.extend([
-                "--priority", "Spot",
-                "--eviction-policy", "Deallocate",
-                "--max-price", "-1"
-            ])
+        # Generate cloud-init script
+        cloud_init = self.generate_cloud_init(self.token)
         
-        self.az.run(cmd)
+        # Write cloud-init to temp file
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(cloud_init)
+            cloud_init_path = f.name
+        
+        try:
+            cmd = [
+                "vm", "create",
+                "--resource-group", self.config.resource_group,
+                "--name", self.config.vm_name,
+                "--location", self.config.location,
+                "--nics", self.config.nic_name,
+                "--image", self.config.os_image,
+                "--size", self.config.vm_size,
+                "--admin-username", self.config.admin_username,
+                "--ssh-key-value", self.config.ssh_key_path,
+                "--assign-identity",
+                "--custom-data", cloud_init_path,
+                "--output", "none"
+            ]
+            
+            if self.config.use_spot:
+                cmd.extend([
+                    "--priority", "Spot",
+                    "--eviction-policy", "Deallocate",
+                    "--max-price", "-1"
+                ])
+            
+            self.az.run(cmd)
+        finally:
+            # Clean up temp file
+            import os
+            if os.path.exists(cloud_init_path):
+                os.unlink(cloud_init_path)
     
     def _get_public_ip(self) -> Optional[str]:
         if self.config.dry_run:
@@ -623,46 +650,6 @@ echo "TOKEN=$TOKEN"
         ])
         return result if isinstance(result, str) else None
     
-    def _install_openclaw(self, public_ip: str) -> str:
-        """SSH into the VM and install OpenClaw."""
-        print("==> Installing OpenClaw on VM (this may take a few minutes)...")
-        
-        # Wait for SSH to be ready
-        import time
-        for attempt in range(30):
-            try:
-                result = subprocess.run(
-                    ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
-                     f"{self.config.admin_username}@{public_ip}", "echo ready"],
-                    capture_output=True, text=True, timeout=10
-                )
-                if result.returncode == 0:
-                    break
-            except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-                pass
-            print(f"    Waiting for SSH... ({attempt + 1}/30)")
-            time.sleep(10)
-        
-        # Run install script
-        result = subprocess.run(
-            ["ssh", "-o", "StrictHostKeyChecking=no",
-             f"{self.config.admin_username}@{public_ip}",
-             f"sudo bash -c '{self.INSTALL_SCRIPT}'"],
-            capture_output=True, text=True
-        )
-        
-        if result.returncode != 0:
-            print(f"Warning: Installation may have failed: {result.stderr}")
-        
-        # Extract token from output
-        token = ""
-        for line in result.stdout.split("\n"):
-            if line.startswith("TOKEN="):
-                token = line.split("=", 1)[1]
-                break
-        
-        return token
-    
     def _print_summary(self, result: dict):
         print()
         print("=" * 50)
@@ -675,6 +662,10 @@ echo "TOKEN=$TOKEN"
         print(f"  Subnet:       {result['subnet_name']} ({result['subnet_prefix']})")
         print()
         print(f"  Dashboard:    {result['dashboard_url']}")
+        print()
+        print("  Note: OpenClaw is being installed via cloud-init.")
+        print("        It may take 2-3 minutes after VM creation to be ready.")
+        print("        Check status: ssh <vm> 'sudo systemctl status openclaw'")
         print()
 
 

@@ -148,8 +148,17 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (
   name: acrName
 }
 
-// NOTE: AcrPull role assignment is handled by scripts/grant_acr_pull step
-// to avoid deployment failure when the role assignment already exists.
+// Grant AcrPull role to managed identity for container pulls
+// ACR Built-in role: AcrPull (2c1c002e-9bbc-490c-a204-b1c1dbc3f191)
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (acrName != '') {
+  scope: acr
+  name: guid(acr.id, managedIdentity.id, 'AcrPull')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-6e2d38e9d6ff')
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
 // ============================================================================
 // KEY VAULT
 // ============================================================================

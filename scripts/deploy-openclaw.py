@@ -442,6 +442,10 @@ WantedBy=multi-user.target'''
             tailscale_install = '''
 echo "==> Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh
+
+echo "==> Configuring sudoers for openclaw user..."
+echo 'openclaw ALL=(ALL) NOPASSWD: /usr/bin/tailscale' > /etc/sudoers.d/openclaw-tailscale
+chmod 440 /etc/sudoers.d/openclaw-tailscale
 '''
             service_start = '''
 echo "==> NOTE: Tailscale requires authentication!"

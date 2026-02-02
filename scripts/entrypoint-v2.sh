@@ -234,13 +234,14 @@ EOFCONFIG
     sed -i "s|OPENCLAW_LOG_LEVEL|$LOG_LEVEL|g" "$GATEWAY_CONFIG"
     sed -i "s|OPENCLAW_WORKSPACE_DIR|$WORKSPACE_DIR|g" "$GATEWAY_CONFIG"
     sed -i "s|OPENCLAW_MODEL_PRIMARY|$model_primary|g" "$GATEWAY_CONFIG"
-    sed -i "s|\"OPENCLAW_AUTH_BLOCK\"|$auth_block|g" "$GATEWAY_CONFIG"
+    # Note: OPENCLAW_AUTH_BLOCK is unquoted in template, so replace without quotes
+    sed -i "s|OPENCLAW_AUTH_BLOCK|$auth_block|g" "$GATEWAY_CONFIG"
 
-    # Handle optional backup model
+    # Handle optional backup model (also unquoted in template)
     if [[ -n "$model_backup" ]]; then
-        sed -i "s|\"OPENCLAW_MODEL_BACKUP_BLOCK\"|, \"backup\": \"$model_backup\"|g" "$GATEWAY_CONFIG"
+        sed -i "s|OPENCLAW_MODEL_BACKUP_BLOCK|, \"backup\": \"$model_backup\"|g" "$GATEWAY_CONFIG"
     else
-        sed -i 's|"OPENCLAW_MODEL_BACKUP_BLOCK"||g' "$GATEWAY_CONFIG"
+        sed -i 's|OPENCLAW_MODEL_BACKUP_BLOCK||g' "$GATEWAY_CONFIG"
     fi
 
     # Handle channels config
@@ -367,12 +368,48 @@ start_gateway() {
 
     # Switch to non-root user for security (openclaw user, UID 1001)
     # Run gateway in foreground (dumb-init handles signals)
-    # Set OPENCLAW_STATE_DIR so gateway can find its config and state
-    exec su - openclaw -c "
-        export OPENCLAW_STATE_DIR=$OPENCLAW_HOME
-        export OPENCLAW_GATEWAY_PORT=$GATEWAY_PORT
-        cd $WORKSPACE_DIR
-        openclaw gateway run --verbose --bind lan --port $GATEWAY_PORT
+    # 
+    # IMPORTANT: Use 'su' without '-' to avoid login shell which resets environment
+    # The login shell (-) sources profile scripts that may clear our env vars
+    # 
+    # Also explicitly pass --config to ensure OpenClaw finds the config file
+    
+    cd "${WORKSPACE_DIR}"
+    
+    # Export environment variables that openclaw needs
+    export HOME="/home/openclaw"
+    export OPENCLAW_STATE_DIR="${OPENCLAW_HOME}"
+    export OPENCLAW_GATEWAY_PORT="${GATEWAY_PORT}"
+    
+    log_info "Environment for openclaw:"
+    log_info "  HOME=$HOME"
+    log_info "  OPENCLAW_STATE_DIR=$OPENCLAW_STATE_DIR"
+    log_info "  Config file: ${OPENCLAW_HOME}/openclaw.json"
+    
+    # Verify config exists before starting
+    if [[ ! -f "${OPENCLAW_HOME}/openclaw.json" ]]; then
+        log_error "Config file missing at ${OPENCLAW_HOME}/openclaw.json"
+        exit 1
+    fi
+    log_success "Config file verified"
+    
+    # Debug: Show what config file contains
+    log_info "Config file contents (first 20 lines):"
+    head -20 "${OPENCLAW_HOME}/openclaw.json" || true
+    echo ""
+    
+    # Run as openclaw user
+    # OpenClaw looks for config at ~/.openclaw/openclaw.json (which is /home/openclaw/.openclaw/openclaw.json)
+    exec su openclaw -s /bin/bash -c "
+        cd '${WORKSPACE_DIR}'
+        export HOME='/home/openclaw'
+        export OPENCLAW_STATE_DIR='${OPENCLAW_HOME}'
+        echo 'DEBUG: Running as user:' \$(whoami)
+        echo 'DEBUG: HOME='\$HOME
+        echo 'DEBUG: OPENCLAW_STATE_DIR='\$OPENCLAW_STATE_DIR
+        echo 'DEBUG: Config exists:' && ls -la '${OPENCLAW_HOME}/openclaw.json' 2>&1 || echo 'Config NOT FOUND'
+        echo 'DEBUG: Starting gateway...'
+        openclaw gateway run --verbose --bind lan --port '${GATEWAY_PORT}'
     "
 }
 

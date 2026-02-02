@@ -143,13 +143,10 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 // CONTAINER REGISTRY ACCESS
 // ============================================================================
 
-// Reference existing ACR (if provided)
-// NOTE: The managed identity needs AcrPull permission on the ACR.
-// This can be granted via: bash scripts/grant-acr-pull.sh <rg> <env> <acr-name>
-// Or manually: az role assignment create --assignee-object-id <id> --role AcrPull --scope <acr-id>
-resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (acrName != '') {
-  name: acrName
-}
+// NOTE: ACR role assignments are handled separately via scripts/grant-acr-pull.sh
+// This script is called automatically by deploy.sh before Bicep deployment.
+// The managed identity doesn't need to be declared here; permissions are
+// granted directly via Azure CLI role assignment.
 // ============================================================================
 // KEY VAULT
 // ============================================================================
@@ -330,9 +327,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/health'
                 port: 18789
               }
-              initialDelaySeconds: 10
-              periodSeconds: 5
-              failureThreshold: 30  // ~150 seconds total startup time
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              failureThreshold: 18  // 30 + (10 * 18) = 210 seconds total
               timeoutSeconds: 5
             }
             {
@@ -341,7 +338,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/health'
                 port: 18789
               }
-              initialDelaySeconds: 180  // Wait for startup to complete
+              initialDelaySeconds: 60
               periodSeconds: 30
               failureThreshold: 3
               timeoutSeconds: 10
@@ -352,7 +349,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/health'
                 port: 18789
               }
-              initialDelaySeconds: 180  // Wait for startup to complete
+              initialDelaySeconds: 60
               periodSeconds: 10
               failureThreshold: 3
               timeoutSeconds: 5

@@ -149,12 +149,12 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (
 }
 
 // Grant AcrPull role to managed identity for container pulls
-// ACR Built-in role: AcrPull (2c1c002e-9bbc-490c-a204-b1c1dbc3f191)
+// ACR Built-in role: AcrPull (7f951dda-4ed3-4680-a7ca-43fe172d538d)
 resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (acrName != '') {
   scope: acr
   name: guid(acr.id, managedIdentity.id, 'AcrPull')
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-6e2d38e9d6ff')
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }

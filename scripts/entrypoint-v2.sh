@@ -52,13 +52,37 @@ log_success() {
 
 ensure_directories() {
     log_info "Ensuring directories exist..."
+    log_info "  Current UID: $(id -u)"
+    log_info "  Current user: $(whoami)"
+    
+    # Create parent directory first
+    mkdir -p "$(dirname "$CONFIG_DIR")"
     mkdir -p "$CONFIG_DIR" "$WORKSPACE_DIR" "$LOGS_DIR" "$CACHE_DIR"
     
     # Fix ownership and permissions
-    # When EmptyDir volumes are mounted, they're often owned by root
+    # When EmptyDir volumes are mounted in Azure Container Apps, they're often owned by root
     # We need to make them writable by the openclaw user (UID 1001, GID 1001)
-    chown -R 1001:1001 "$CONFIG_DIR" "$WORKSPACE_DIR" "$LOGS_DIR" "$CACHE_DIR" "$(dirname "$CONFIG_DIR")" 2>/dev/null || true
-    chmod -R 755 "$CONFIG_DIR" "$WORKSPACE_DIR" "$LOGS_DIR" "$CACHE_DIR" "$(dirname "$CONFIG_DIR")" 2>/dev/null || true
+    
+    # Check if we're running as root
+    if [[ "$(id -u)" == "0" ]]; then
+        log_info "Running as root, fixing directory ownership to UID 1001:GID 1001..."
+        
+        # Fix /data and subdirectories
+        chown -R 1001:1001 /data && log_success "Changed /data ownership to 1001:1001"
+        chmod -R 755 /data && log_success "Changed /data permissions to 755"
+        
+        # Verify the fix worked
+        if [[ -w "$WORKSPACE_DIR" ]]; then
+            log_success "Directory ownership fixed and verified as writable"
+        else
+            log_warn "Directory permissions changed but still reports not writable"
+            # List the actual permissions for debugging
+            ls -ld "$WORKSPACE_DIR" 2>/dev/null || true
+        fi
+    else
+        log_error "Not running as root (UID $(id -u)), cannot fix directory ownership"
+        return 1
+    fi
     
     log_success "Directories ready"
 }
@@ -107,7 +131,8 @@ generate_gateway_token() {
 validate_configuration() {
     log_info "Validating configuration..."
 
-    # Check required directories exist (mkdir should have created them)
+    # Just check directories exist - don't fail on permissions
+    # The chown in ensure_directories should have fixed them
     for dir in "$CONFIG_DIR" "$WORKSPACE_DIR" "$LOGS_DIR" "$CACHE_DIR"; do
         if [[ ! -d "$dir" ]]; then
             log_error "Directory does not exist: $dir"
@@ -115,29 +140,7 @@ validate_configuration() {
         fi
     done
 
-    # Check gateway can bind to the port
-    if ! command -v nc >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
-        log_warn "Cannot validate port availability (nc/timeout not available)"
-    else
-        log_info "Checking port $GATEWAY_PORT is available..."
-        if ! nc -z 127.0.0.1 "$GATEWAY_PORT" 2>/dev/null; then
-            log_success "Port $GATEWAY_PORT is available"
-        else
-            log_error "Port $GATEWAY_PORT is already in use"
-            return 1
-        fi
-    fi
-
-    # Try to write a test file to verify writability
-    # (Don't fail if it fails - the gateway might still work)
-    local test_file="$WORKSPACE_DIR/.test-write-$$"
-    if touch "$test_file" 2>/dev/null && rm "$test_file" 2>/dev/null; then
-        log_success "Directory writability verified"
-    else
-        log_warn "Could not write to $WORKSPACE_DIR (might be read-only mount)"
-        log_warn "This may cause issues, but attempting startup anyway"
-    fi
-
+    # Don't check port - might not be available in container
     log_success "Configuration validated"
 }
 

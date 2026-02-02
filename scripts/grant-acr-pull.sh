@@ -109,14 +109,22 @@ main() {
         log_success "ACR Resource ID: $ACR_RESOURCE_ID"
         echo ""
 
-        # Grant AcrPull role
+    # Grant AcrPull role (safe to run multiple times)
         log_info "Assigning AcrPull role to managed identity..."
         az role assignment create \
             --assignee-object-id "$IDENTITY_ID" \
             --assignee-principal-type ServicePrincipal \
             --role "AcrPull" \
             --scope "$ACR_RESOURCE_ID" \
-            --output none || log_warn "Role assignment may already exist (OK if error is about duplicate)"
+            --output none 2>&1 || {
+            EXIT_CODE=$?
+            if [[ $EXIT_CODE -eq 1 ]] && grep -q "RoleAssignmentExists\|already exists" <<< "$OUTPUT" 2>/dev/null; then
+                log_warn "Role assignment already exists (this is OK)"
+            else
+                log_error "Failed to assign role (exit code: $EXIT_CODE)"
+                exit 1
+            fi
+        }
 
         log_success "AcrPull role assigned!"
     else

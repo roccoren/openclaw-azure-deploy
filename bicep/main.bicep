@@ -144,20 +144,11 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 // ============================================================================
 
 // Reference existing ACR (if provided)
+// NOTE: The managed identity needs AcrPull permission on the ACR.
+// This can be granted via: bash scripts/grant-acr-pull.sh <rg> <env> <acr-name>
+// Or manually: az role assignment create --assignee-object-id <id> --role AcrPull --scope <acr-id>
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (acrName != '') {
   name: acrName
-}
-
-// Grant AcrPull role to managed identity for container pulls
-// ACR Built-in role: AcrPull (7f951dda-4ed3-4680-a7ca-43fe172d538d)
-resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (acrName != '') {
-  scope: acr
-  name: guid(acr.id, managedIdentity.id, 'AcrPull')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
 }
 // ============================================================================
 // KEY VAULT

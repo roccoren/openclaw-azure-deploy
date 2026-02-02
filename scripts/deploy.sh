@@ -270,6 +270,16 @@ deploy_infrastructure() {
         return
     fi
 
+    # Grant ACR pull permission before deployment
+    if [[ -n "$ACR_NAME" ]]; then
+        log_info "Granting ACR pull permission to managed identity..."
+        if bash "${SCRIPT_DIR}/grant-acr-pull.sh" "$RESOURCE_GROUP" "$ENVIRONMENT" "$ACR_NAME" 2>&1 | tail -5; then
+            log_success "ACR permissions configured"
+        else
+            log_warning "Could not auto-grant ACR permissions, will attempt deployment anyway"
+        fi
+    fi
+
     local DEPLOY_CMD=(
         az deployment group create
         --resource-group "$RESOURCE_GROUP"

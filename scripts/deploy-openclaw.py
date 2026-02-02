@@ -61,6 +61,7 @@ class DeployConfig:
     ssh_key_path: str = field(default_factory=lambda: str(Path.home() / ".ssh" / "id_rsa.pub"))
     os_image: str = "Canonical:ubuntu-24_04-lts:server:latest"
     admin_username: str = "azureuser"
+    auth_token: Optional[str] = None  # GitHub Copilot or other provider token
     
     # ACA-specific
     aca_cpu: float = 1.0
@@ -282,8 +283,25 @@ class VMDeployer:
     """Deploy OpenClaw to an Azure VM."""
     
     @staticmethod
-    def generate_cloud_init(token: str) -> str:
-        """Generate cloud-init script with embedded token."""
+    def generate_cloud_init(gateway_token: str, auth_token: Optional[str] = None) -> str:
+        """Generate cloud-init script with embedded tokens.
+        
+        Args:
+            gateway_token: Token for gateway auth
+            auth_token: Optional GitHub Copilot or other provider token for model auth
+        """
+        # Build auth setup command if token provided
+        auth_setup = ""
+        if auth_token:
+            auth_setup = f'''
+      echo "==> Setting up model auth..."
+      sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept-risk \\
+        --workspace /data/workspace \\
+        --auth-choice token \\
+        --token-provider github-copilot \\
+        --token "{auth_token}"
+'''
+        
         return f'''#cloud-config
 package_update: true
 package_upgrade: true
@@ -306,7 +324,7 @@ write_files:
           "port": 18789,
           "auth": {{
             "mode": "token",
-            "token": "{token}"
+            "token": "{gateway_token}"
           }}
         }},
         "agents": {{
@@ -335,7 +353,7 @@ write_files:
       Type=simple
       User=openclaw
       WorkingDirectory=/data/workspace
-      ExecStart=/usr/bin/openclaw gateway start --foreground
+      ExecStart=/usr/bin/openclaw gateway run
       Restart=on-failure
       RestartSec=10
       Environment=HOME=/home/openclaw
@@ -361,7 +379,7 @@ write_files:
       mkdir -p /data/workspace
       chown openclaw:openclaw /data/workspace
       chown -R openclaw:openclaw /home/openclaw
-      
+{auth_setup}
       echo "==> Starting OpenClaw service..."
       systemctl daemon-reload
       systemctl enable openclaw
@@ -600,7 +618,7 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         print(f"==> Creating VM: {self.config.vm_name} (with cloud-init)")
         
         # Generate cloud-init script
-        cloud_init = self.generate_cloud_init(self.token)
+        cloud_init = self.generate_cloud_init(self.token, self.config.auth_token)
         
         # Write cloud-init to temp file
         import tempfile
@@ -823,6 +841,8 @@ def parse_args() -> DeployConfig:
                           help="Path to SSH public key")
     vm_parser.add_argument("--admin-username", default="azureuser",
                           help="VM admin username (default: azureuser)")
+    vm_parser.add_argument("--auth-token", dest="auth_token",
+                          help="GitHub Copilot or provider auth token for model access")
     
     # ACA subcommand
     aca_parser = subparsers.add_parser("aca", help="Deploy to Azure Container Apps")
@@ -864,6 +884,7 @@ def parse_args() -> DeployConfig:
             "subnet_prefix": args.subnet_prefix,
             "ssh_key_path": args.ssh_key_path,
             "admin_username": args.admin_username,
+            "auth_token": args.auth_token,
         })
     elif args.target == "aca":
         config_kwargs.update({

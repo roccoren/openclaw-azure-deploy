@@ -53,6 +53,7 @@ class DeployConfig:
     # VM-specific
     use_spot: bool = True
     vm_size: str = "Standard_D2als_v6"
+    os_disk_size_gb: int = 128
     vnet_prefix: str = ""  # Auto-calculated if not specified
     subnet_prefix: str = ""  # Auto-calculated if not specified
     vnet_name: Optional[str] = None  # Existing VNet to reuse
@@ -620,6 +621,7 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
                 "--ssh-key-value", self.config.ssh_key_path,
                 "--assign-identity",
                 "--custom-data", cloud_init_path,
+                "--os-disk-size-gb", str(self.config.os_disk_size_gb),
                 "--output", "none"
             ]
             
@@ -808,6 +810,8 @@ def parse_args() -> DeployConfig:
                           help="Use regular VM pricing")
     vm_parser.add_argument("--vm-size", default="Standard_D2als_v6",
                           help="VM size (default: Standard_D2als_v6)")
+    vm_parser.add_argument("--os-disk-size", dest="os_disk_size_gb", type=int, default=128,
+                          help="OS disk size in GB (default: 128)")
     vm_parser.add_argument("--vnet-name", help="Existing VNet name to reuse")
     vm_parser.add_argument("--subnet-name", help="Existing subnet name to reuse (requires --vnet-name)")
     vm_parser.add_argument("--vnet-prefix", default="",
@@ -853,6 +857,7 @@ def parse_args() -> DeployConfig:
         config_kwargs.update({
             "use_spot": args.use_spot,
             "vm_size": args.vm_size,
+            "os_disk_size_gb": args.os_disk_size_gb,
             "vnet_name": args.vnet_name,
             "subnet_name": args.subnet_name,
             "vnet_prefix": args.vnet_prefix,

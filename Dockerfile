@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg \
     dumb-init \
+    su-exec \
     # Chromium for browser automation
     chromium \
     # Fonts for proper rendering
@@ -88,8 +89,9 @@ RUN chmod +x /usr/local/bin/entrypoint
 # Set working directory
 WORKDIR /data/workspace
 
-# Switch to non-root user
-USER openclaw
+# NOTE: Run as root so entrypoint can fix directory ownership/permissions
+# The entrypoint will switch to the 'openclaw' non-root user after setup
+# This is safe because dumb-init handles signal forwarding
 
 # Expose gateway port
 EXPOSE 18789

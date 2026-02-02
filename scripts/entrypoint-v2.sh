@@ -169,86 +169,58 @@ generate_gateway_config() {
     if [[ -n "$gateway_token" ]]; then
         auth_block="\"auth\": {\"mode\": \"token\", \"token\": \"${gateway_token}\"}"
     else
-        auth_block="\"auth\": {\"mode\": \"anonymous\"}"
+        auth_block="\"auth\": {\"mode\": \"token\", \"token\": \"\"}"
     fi
 
     # Build gateway config
     local model_primary="${OPENCLAW_MODEL_PRIMARY:-github-copilot/claude-haiku-4.5}"
     local model_backup="${OPENCLAW_MODEL_BACKUP:-}"
 
+    # Map bind address to OpenClaw bind mode
+    # OpenClaw only accepts: auto, lan, loopback, custom, tailnet
+    local bind_mode="lan"
+    if [[ "$GATEWAY_BIND" == "127.0.0.1" ]]; then
+        bind_mode="loopback"
+    elif [[ "$GATEWAY_BIND" == "0.0.0.0" ]]; then
+        bind_mode="lan"
+    fi
+
     # Create gateway configuration file
-    cat > "$GATEWAY_CONFIG" <<'EOFCONFIG'
+    # Schema-compliant config based on OpenClaw 2026.2.1
+    cat > "$GATEWAY_CONFIG" <<EOFCONFIG
 {
   "gateway": {
     "mode": "local",
-    "bind": "OPENCLAW_GATEWAY_BIND",
-    "port": OPENCLAW_GATEWAY_PORT,
-    "logLevel": "OPENCLAW_LOG_LEVEL",
-    "cors": {
-      "enabled": true,
-      "origins": ["*"],
-      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      "headers": ["Content-Type", "Authorization", "X-Gateway-Token"]
-    },
-    OPENCLAW_AUTH_BLOCK
+    "bind": "${bind_mode}",
+    "port": ${GATEWAY_PORT},
+    ${auth_block}
   },
   "agents": {
     "defaults": {
-      "workspace": "OPENCLAW_WORKSPACE_DIR",
+      "workspace": "${WORKSPACE_DIR}",
       "model": {
-        "primary": "OPENCLAW_MODEL_PRIMARY"
-        OPENCLAW_MODEL_BACKUP_BLOCK
+        "primary": "${model_primary}"
       }
     }
   },
-  "workspace": "OPENCLAW_WORKSPACE_DIR",
-  "channels": "OPENCLAW_CHANNELS_CONFIG",
   "browser": {
     "enabled": true,
     "executablePath": "/usr/bin/chromium",
     "headless": true,
-    "args": [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-software-rasterizer"
-    ]
-  },
-  "memory": {
-    "enabled": true
+    "noSandbox": true
   },
   "logging": {
-    "format": "json",
-    "timestamps": true,
-    "includeRequestId": true,
-    "redactSecrets": true,
-    "level": "OPENCLAW_LOG_LEVEL"
+    "level": "${LOG_LEVEL}"
   }
 }
 EOFCONFIG
 
-    # Apply substitutions
-    sed -i "s|OPENCLAW_GATEWAY_BIND|$GATEWAY_BIND|g" "$GATEWAY_CONFIG"
-    sed -i "s|OPENCLAW_GATEWAY_PORT|$GATEWAY_PORT|g" "$GATEWAY_CONFIG"
-    sed -i "s|OPENCLAW_LOG_LEVEL|$LOG_LEVEL|g" "$GATEWAY_CONFIG"
-    sed -i "s|OPENCLAW_WORKSPACE_DIR|$WORKSPACE_DIR|g" "$GATEWAY_CONFIG"
-    sed -i "s|OPENCLAW_MODEL_PRIMARY|$model_primary|g" "$GATEWAY_CONFIG"
-    # Note: OPENCLAW_AUTH_BLOCK is unquoted in template, so replace without quotes
-    sed -i "s|OPENCLAW_AUTH_BLOCK|$auth_block|g" "$GATEWAY_CONFIG"
-
-    # Handle optional backup model (also unquoted in template)
+    # Add fallback model if specified
     if [[ -n "$model_backup" ]]; then
-        sed -i "s|OPENCLAW_MODEL_BACKUP_BLOCK|, \"backup\": \"$model_backup\"|g" "$GATEWAY_CONFIG"
-    else
-        sed -i 's|OPENCLAW_MODEL_BACKUP_BLOCK||g' "$GATEWAY_CONFIG"
-    fi
-
-    # Handle channels config
-    if [[ -f "$CHANNELS_CONFIG" ]]; then
-        sed -i "s|\"OPENCLAW_CHANNELS_CONFIG\"|\"$CHANNELS_CONFIG\"|g" "$GATEWAY_CONFIG"
-    else
-        sed -i 's|"OPENCLAW_CHANNELS_CONFIG"|{}|g' "$GATEWAY_CONFIG"
+        # Use jq if available, otherwise use sed
+        if command -v jq >/dev/null 2>&1; then
+            jq ".agents.defaults.model.fallbacks = [\"$model_backup\"]" "$GATEWAY_CONFIG" > "${GATEWAY_CONFIG}.tmp" && mv "${GATEWAY_CONFIG}.tmp" "$GATEWAY_CONFIG"
+        fi
     fi
 
     log_success "Gateway configuration generated: $GATEWAY_CONFIG"

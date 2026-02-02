@@ -679,7 +679,6 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
                 "--size", self.config.vm_size,
                 "--admin-username", self.config.admin_username,
                 "--ssh-key-value", self.config.ssh_key_path,
-                "--assign-identity",
                 "--custom-data", cloud_init_path,
                 "--os-disk-size-gb", str(self.config.os_disk_size_gb),
                 "--output", "none"

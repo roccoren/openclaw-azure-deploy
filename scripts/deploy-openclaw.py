@@ -433,69 +433,28 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
   }}
 }}'''
 
-        # Systemd service
-        if use_tailscale:
-            systemd_service = '''[Unit]
-Description=OpenClaw Gateway
-After=network.target tailscaled.service
-Wants=tailscaled.service
-
-[Service]
-Type=simple
-User=openclaw
-WorkingDirectory=/data/workspace
-ExecStart=/usr/bin/openclaw gateway run
-Restart=on-failure
-RestartSec=10
-Environment=HOME=/home/openclaw
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target'''
-        else:
-            systemd_service = '''[Unit]
-Description=OpenClaw Gateway
-After=network.target
-
-[Service]
-Type=simple
-User=openclaw
-WorkingDirectory=/data/workspace
-ExecStart=/usr/bin/openclaw gateway run
-Restart=on-failure
-RestartSec=10
-Environment=HOME=/home/openclaw
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target'''
-
         # Setup script - Tailscale install only if needed
         if use_tailscale:
             tailscale_install = '''
 echo "==> Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh
-
-echo "==> Configuring sudoers for openclaw user..."
-echo 'openclaw ALL=(ALL) NOPASSWD: /usr/bin/tailscale' > /etc/sudoers.d/openclaw-tailscale
-chmod 440 /etc/sudoers.d/openclaw-tailscale
 '''
             service_start = '''
+echo "==> Installing OpenClaw service..."
+sudo -u openclaw HOME=/home/openclaw openclaw gateway install
+
 echo "==> NOTE: Tailscale requires authentication!"
 echo "==> After VM creation, SSH in and run:"
 echo "    sudo tailscale up"
 echo "==> Then start OpenClaw:"
-echo "    sudo systemctl daemon-reload"
-echo "    sudo systemctl enable openclaw"
-echo "    sudo systemctl start openclaw"
+echo "    sudo -u openclaw openclaw gateway start"
 '''
         else:
             tailscale_install = ""
             service_start = '''
-echo "==> Starting OpenClaw service..."
-systemctl daemon-reload
-systemctl enable openclaw
-systemctl start openclaw
+echo "==> Installing and starting OpenClaw service..."
+sudo -u openclaw HOME=/home/openclaw openclaw gateway install
+sudo -u openclaw HOME=/home/openclaw openclaw gateway start
 '''
 
         setup_script = f'''#!/bin/bash
@@ -508,11 +467,6 @@ echo "==> Writing OpenClaw config..."
 cat > /home/openclaw/.openclaw/openclaw.json << 'CONFIGEOF'
 {config_json}
 CONFIGEOF
-
-echo "==> Writing systemd service..."
-cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
-{systemd_service}
-SERVICEEOF
 
 echo "==> Installing Node.js 22.x..."
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -

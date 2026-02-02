@@ -1,173 +1,205 @@
-# Azure OpenClaw Deployment - Complete Package
+# OpenClaw Azure Deployment
 
-## 📦 What's Included
+Deploy OpenClaw to Azure VMs or Azure Container Apps with a single command.
 
-All production-ready code for deploying OpenClaw to Azure Container Apps:
+## 🚀 Quick Start
 
-### Infrastructure as Code
-- **`bicep/main.bicep`** — Complete Container Apps setup
-  - Container Apps environment with auto-scaling
-  - Managed identity for security
-  - Log Analytics + Application Insights monitoring
-  - Azure Files for persistent storage
-  - Key Vault integration
-  
-- **`bicep/parameters.bicep`** — Reusable parameters
-- **`bicep/parameters.dev.json`** — Dev environment (0.5 vCPU, 1 GB RAM)
-- **`bicep/parameters.prod.json`** — Prod environment (2 vCPU, 4 GB RAM)
+### Deploy to Azure VM (Recommended)
 
-### Docker
-- **`Dockerfile`** — Production-optimized
-  - Node.js 22 base
-  - Chromium for browser automation
-  - Non-root user for security
-  - Health checks
-  - Proper signal handling
-
-### Deployment Scripts
-- **`scripts/deploy.sh`** — Full deployment automation
-  - Validates prerequisites
-  - Builds and pushes Docker image
-  - Creates/updates infrastructure
-  - Configures secrets
-  - Verifies deployment
-  
-- **`scripts/build-image.sh`** — Docker build helper
-- **`scripts/setup-secrets.sh`** — Key Vault configuration
-- **`scripts/healthcheck.sh`** — Container health check
-
-### Configuration
-- **`config/gateway-config.json`** — OpenClaw gateway settings
-- **`config/channels.json`** — Teams/Slack/Telegram setup template
-
-### Documentation
-- **`QUICKSTART.md`** — 5-minute setup guide
-- **`azure-openclaw-architecture.md`** — Detailed architecture (in docs/)
-
----
-
-## 🚀 Getting Started
-
-### Option 1: Automated (Recommended)
 ```bash
-cd /home/roccoren/clawd/azure
+# Basic deployment with spot pricing
+python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2
 
-# Deploy everything in one command
-bash scripts/deploy.sh prod \
-  --resource-group openclaw-prod-rg \
-  --registry openclawacr
+# With GitHub Copilot auth token
+python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
+  --auth-token "ghu_xxxxxxxxxxxx"
+
+# Dry run (preview commands without executing)
+python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 --dry-run
 ```
 
-### Option 2: Step by Step
+### Deploy to Azure Container Apps
+
 ```bash
-# 1. Create resource group
-az group create -n openclaw-prod-rg -l westus2
-
-# 2. Build and push Docker image
-bash scripts/build-image.sh \
-  --registry openclawacr \
-  --resource-group openclaw-prod-rg
-
-# 3. Configure secrets
-bash scripts/setup-secrets.sh \
-  --resource-group openclaw-prod-rg \
-  --anthropic-key "sk-ant-..." \
-  --gateway-token "$(openssl rand -hex 32)"
-
-# 4. Deploy infrastructure
-az deployment group create \
-  -g openclaw-prod-rg \
-  -f bicep/main.bicep \
-  -p @bicep/parameters.prod.json \
-  -p containerImage=openclawacr.azurecr.io/openclaw:latest
+python scripts/deploy-openclaw.py aca --name my-openclaw --location westus2
 ```
 
----
+## 📋 Prerequisites
 
-## 💰 Cost Comparison
+- Python 3.8+
+- Azure CLI (`az`) logged in
+- SSH public key in `~/.ssh/` (auto-detected)
 
-| Component | Dev | Staging | Prod |
-|-----------|-----|---------|------|
-| Container Apps | $10 | $25 | $100 |
-| Storage | $1 | $1 | $2 |
-| Key Vault | $1 | $1 | $1 |
-| Monitoring | $0 | $2 | $5 |
-| **Monthly Total** | **$12** | **$29** | **$108** |
-
----
-
-## 🔒 Security Features
-
-✅ **Built-in:**
-- Non-root Docker container
-- Managed identities (no API keys in code)
-- Azure Key Vault for secrets
-- Network policies via Container Apps
-- TLS/HTTPS by default
-- Health checks + auto-restart
-- Application Insights for audit logs
-
----
-
-## 📊 Monitoring & Logging
-
-Once deployed, view:
-- **Container logs:** `az containerapp logs show -g <rg> -n openclaw-app-prod --follow`
-- **Metrics:** Azure Portal → Application Insights
-- **Health status:** `curl https://<app-url>/health`
-
----
-
-## 🔄 Updating Deployment
-
-To update the container image:
 ```bash
-# Rebuild and push
-docker build -t openclawacr.azurecr.io/openclaw:latest .
-docker push openclawacr.azurecr.io/openclaw:latest
+# Login to Azure
+az login
 
-# Redeploy (Container App auto-updates)
-az deployment group update \
-  -g openclaw-prod-rg \
-  -f bicep/main.bicep \
-  -p @bicep/parameters.prod.json
+# Verify
+az account show
 ```
 
----
+## ⚙️ VM Deployment Options
 
-## ❓ FAQ
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--name` | (required) | Deployment name (used for RG, VM, VNet, etc.) |
+| `--location` | (required) | Azure region (e.g., `westus2`, `eastus`) |
+| `--resource-group` | `<name>-group` | Existing resource group to use |
+| `--no-spot` | spot enabled | Use regular pricing instead of spot |
+| `--vm-size` | `Standard_D2als_v6` | VM size (2 vCPU, 4 GB RAM) |
+| `--os-disk-size` | `128` | OS disk size in GB |
+| `--auth-token` | none | GitHub Copilot or provider auth token |
+| `--vnet-name` | auto-created | Existing VNet to reuse |
+| `--subnet-name` | auto-created | Existing subnet to reuse |
+| `--ssh-key` | auto-detected | Path to SSH public key |
+| `--admin-username` | `$USER` | VM admin username |
+| `--dry-run` | false | Preview commands without executing |
 
-**Q: Do I need a custom domain?**
-A: No, Azure provides a default FQDN. To use custom domain, add Application Gateway in front.
+## ⚙️ Container Apps Options
 
-**Q: How do I scale?**
-A: Edit `maxReplicas` in Bicep parameters, then redeploy.
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--name` | (required) | Deployment name |
+| `--location` | (required) | Azure region |
+| `--resource-group` | `<name>-group` | Resource group |
+| `--cpu` | `1.0` | CPU cores |
+| `--memory` | `2Gi` | Memory |
+| `--min-replicas` | `1` | Minimum replicas |
+| `--max-replicas` | `1` | Maximum replicas |
 
-**Q: Can I switch models?**
-A: Yes, edit `gateway-config.json` and redeploy.
+## 🔧 What Gets Created
 
-**Q: What about backups?**
-A: Azure Files is automatically replicated. For production, enable geo-redundancy in parameters.
+### VM Deployment
 
----
+- **Resource Group:** `<name>-group`
+- **Virtual Network:** `<name>-vnet` (10.200.x.x/27, auto-incremented)
+- **Subnet:** `<name>-subnet` (/28)
+- **Network Security Group:** SSH (22) + OpenClaw (18789)
+- **Public IP:** Static
+- **VM:** Ubuntu 24.04 LTS with spot pricing
+- **OpenClaw:** Installed via cloud-init, runs as systemd service
 
-## 🎯 Next Steps
+### Container Apps Deployment
 
-1. **Read:** `QUICKSTART.md` for detailed steps
-2. **Customize:** `config/gateway-config.json` for your needs
-3. **Deploy:** Run `bash scripts/deploy.sh prod`
-4. **Verify:** Check logs and test endpoints
-5. **Connect:** Configure Teams bot or other channels
-6. **Monitor:** Set up alerts in Application Insights
+- **Resource Group:** `<name>-group`
+- **Container Apps Environment**
+- **Container App:** OpenClaw with HTTPS ingress
+- **Log Analytics Workspace**
 
----
+## 🌐 Network Configuration
 
-## 📞 Need Help?
+VNet addresses are auto-incremented in the `10.200.0.0/16` range:
+- First deployment: `10.200.0.0/27`
+- Second deployment: `10.200.0.32/27`
+- And so on...
 
-- **Azure CLI:** `az containerapp --help`
-- **Bicep Docs:** https://learn.microsoft.com/azure/azure-resource-manager/bicep
+To reuse an existing VNet:
+```bash
+python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
+  --resource-group existing-rg \
+  --vnet-name existing-vnet \
+  --subnet-name existing-subnet
+```
+
+## 🔑 Authentication
+
+### Gateway Token
+A random gateway token is auto-generated and shown after deployment:
+```
+Dashboard: http://<public-ip>:18789/?token=<TOKEN>
+```
+
+### Model Auth (GitHub Copilot)
+Pass `--auth-token` to configure GitHub Copilot authentication during deployment:
+```bash
+python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
+  --auth-token "ghu_xxxxxxxxxxxx"
+```
+
+## 📊 Post-Deployment
+
+### SSH into VM
+```bash
+ssh <username>@<public-ip>
+```
+
+### Check OpenClaw Status
+```bash
+sudo systemctl status openclaw
+```
+
+### View Logs
+```bash
+sudo journalctl -u openclaw -f
+```
+
+### Access Dashboard
+Open the URL shown after deployment:
+```
+http://<public-ip>:18789/?token=<TOKEN>
+```
+
+## 💰 Cost Estimates
+
+### VM (Spot Pricing)
+| Resource | Monthly Cost |
+|----------|-------------|
+| VM (D2als_v6 spot) | ~$15-25 |
+| Disk (128 GB) | ~$10 |
+| Public IP | ~$3 |
+| **Total** | **~$28-38** |
+
+### Container Apps
+| Resource | Monthly Cost |
+|----------|-------------|
+| Container (1 vCPU, 2 GB) | ~$50 |
+| Log Analytics | ~$5 |
+| **Total** | **~$55** |
+
+## 🔒 Security
+
+- SSH key authentication (no passwords)
+- Network Security Group limits access to ports 22 and 18789
+- Gateway token required for dashboard access
+- OpenClaw runs as non-root `openclaw` user
+- Managed identity enabled on VM
+
+## 📁 Repository Structure
+
+```
+openclaw-azure-deploy/
+├── scripts/
+│   └── deploy-openclaw.py    # Main deployment script
+├── bicep/                     # (Legacy) Bicep templates
+├── config/                    # Configuration templates
+└── README.md
+```
+
+## 🆘 Troubleshooting
+
+### Cloud-init failed
+```bash
+sudo cloud-init status
+sudo cat /var/log/cloud-init-output.log
+```
+
+### OpenClaw not running
+```bash
+sudo systemctl status openclaw
+sudo journalctl -u openclaw -n 100
+```
+
+### Check if Node.js installed
+```bash
+node --version
+openclaw --version
+```
+
+## 📞 Resources
+
+- **OpenClaw Docs:** https://docs.openclaw.ai
+- **Azure CLI:** https://learn.microsoft.com/cli/azure
 - **Container Apps:** https://learn.microsoft.com/azure/container-apps
-- **OpenClaw:** https://docs.clawd.bot
 
 ---
 

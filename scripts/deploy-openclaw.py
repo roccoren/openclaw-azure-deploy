@@ -346,18 +346,23 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
         
         # Config JSON depends on tailscale mode
         if use_tailscale:
-            # Funnel requires password auth per OpenClaw docs
+            # Funnel requires password auth, trustedProxies, and controlUi config
             config_json = f'''{{
   "gateway": {{
     "mode": "local",
     "bind": "loopback",
     "port": 18789,
+    "trustedProxies": ["127.0.0.1"],
     "tailscale": {{
       "mode": "funnel"
     }},
     "auth": {{
       "mode": "password",
-      "password": "{gateway_token}"
+      "password": "{gateway_token}",
+      "allowTailscale": true
+    }},
+    "controlUi": {{
+      "dangerouslyDisableDeviceAuth": true
     }}
   }},
   "agents": {{

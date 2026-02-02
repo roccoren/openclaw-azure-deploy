@@ -178,10 +178,16 @@ class AzureCLI:
         try:
             result = subprocess.run(
                 cmd,
-                capture_output=capture,
+                capture_output=True,  # Always capture to suppress warnings
                 text=True,
                 check=check
             )
+            if self.verbose and result.stdout:
+                print(result.stdout)
+            # Only show stderr if it looks like an error (not a warning)
+            if result.stderr and not any(w in result.stderr.lower() for w in 
+                ['warning', 'preview', 'the default value', 'no access was given']):
+                print(result.stderr, file=sys.stderr)
             if capture:
                 return result.stdout.strip()
             return None

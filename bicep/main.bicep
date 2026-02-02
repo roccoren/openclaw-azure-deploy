@@ -354,17 +354,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               failureThreshold: 3
               timeoutSeconds: 5
             }
-            {
-              type: 'Startup'
-              httpGet: {
-                path: '/health'
-                port: 18789
-              }
-              initialDelaySeconds: 10
-              periodSeconds: 10
-              failureThreshold: 30
-              timeoutSeconds: 5
-            }
           ]
         }
       ]

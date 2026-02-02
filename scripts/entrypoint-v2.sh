@@ -349,9 +349,10 @@ start_gateway() {
         return 1
     fi
 
-    # Switch to non-root user for security (UID 1001 = openclaw user)
+    # Switch to non-root user for security (openclaw user, UID 1001)
     # Run gateway in foreground (dumb-init handles signals)
-    exec su-exec 1001:1001 openclaw gateway run --config "$GATEWAY_CONFIG"
+    # Use 'su' with - to start a login shell as the openclaw user
+    exec su - openclaw -c "openclaw gateway run --config $GATEWAY_CONFIG"
 }
 
 # ============================================================================

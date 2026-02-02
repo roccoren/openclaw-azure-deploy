@@ -45,7 +45,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg \
     dumb-init \
-    su-exec \
     # Chromium for browser automation
     chromium \
     # Fonts for proper rendering

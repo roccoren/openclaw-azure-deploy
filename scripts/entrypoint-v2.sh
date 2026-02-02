@@ -17,8 +17,9 @@ WORKSPACE_DIR="${OPENCLAW_WORKSPACE:-/data/workspace}"
 LOGS_DIR="${OPENCLAW_LOGS:-/data/logs}"
 CACHE_DIR="${OPENCLAW_CACHE:-/data/cache}"
 
-GATEWAY_CONFIG="${CONFIG_DIR}/openclaw.json"
-CHANNELS_CONFIG="${CONFIG_DIR}/channels.json"
+# Gateway config must be in workspace directory for openclaw to find it
+GATEWAY_CONFIG="${WORKSPACE_DIR}/openclaw.json"
+CHANNELS_CONFIG="${WORKSPACE_DIR}/channels.json"
 
 # Defaults
 GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-0.0.0.0}"

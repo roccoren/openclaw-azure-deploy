@@ -324,13 +324,14 @@ class VMDeployer:
     """Deploy OpenClaw to an Azure VM."""
     
     @staticmethod
-    def generate_cloud_init(gateway_token: str, auth_token: Optional[str] = None, use_tailscale: bool = False) -> str:
+    def generate_cloud_init(gateway_token: str, auth_token: Optional[str] = None, use_tailscale: bool = False, admin_username: str = "azureuser") -> str:
         """Generate cloud-init script with embedded tokens.
         
         Args:
             gateway_token: Token for gateway auth
             auth_token: Optional GitHub Copilot or other provider token for model auth
             use_tailscale: If True, use Tailscale Funnel for HTTPS. Otherwise use LAN binding.
+            admin_username: Admin username to copy SSH keys from
         """
         # Build auth setup command if token provided
         # For semi-automated flow, we just note the token - user runs onboard manually
@@ -567,6 +568,15 @@ if [ -z "$XDG_RUNTIME_DIR" ]; then
     export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 fi
 BASHRCEOF
+
+echo "==> Copying SSH authorized keys to openclaw user..."
+mkdir -p /home/openclaw/.ssh
+chmod 700 /home/openclaw/.ssh
+if [ -f /home/{admin_username}/.ssh/authorized_keys ]; then
+    cp /home/{admin_username}/.ssh/authorized_keys /home/openclaw/.ssh/authorized_keys
+fi
+chown -R openclaw:openclaw /home/openclaw/.ssh
+chmod 600 /home/openclaw/.ssh/authorized_keys 2>/dev/null || true
 
 {auth_note}
 {service_start}
@@ -825,7 +835,7 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         print(f"==> Creating VM: {self.config.vm_name} (with cloud-init)")
         
         # Generate cloud-init script
-        cloud_init = self.generate_cloud_init(self.token, self.config.auth_token, self.config.use_tailscale)
+        cloud_init = self.generate_cloud_init(self.token, self.config.auth_token, self.config.use_tailscale, self.config.admin_username)
         
         # Write cloud-init to temp file
         import tempfile

@@ -333,17 +333,15 @@ class VMDeployer:
             use_tailscale: If True, use Tailscale Funnel for HTTPS. Otherwise use LAN binding.
         """
         # Build auth setup command if token provided
+        # For semi-automated flow, we just note the token - user runs onboard manually
         auth_setup = ""
+        auth_note = ""
         if auth_token:
-            auth_setup = f'''
-echo "==> Setting up model auth..."
-OPENCLAW_UID=$(id -u openclaw)
-sudo -u openclaw HOME=/home/openclaw XDG_RUNTIME_DIR=/run/user/$OPENCLAW_UID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$OPENCLAW_UID/bus openclaw onboard --non-interactive --accept-risk \\
-  --workspace /data/workspace \\
-  --auth-choice token \\
-  --token-provider github-copilot \\
-  --token "{auth_token}" \\
-  --skip-daemon
+            auth_note = f'''
+echo ""
+echo "  Model auth token provided. After gateway install, run:"
+echo "     openclaw onboard --non-interactive --accept-risk --auth-choice token --token-provider github-copilot --token {auth_token} --skip-daemon"
+echo ""
 '''
         
         # Config JSON depends on tailscale mode
@@ -442,45 +440,47 @@ echo "==> Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh
 '''
             service_start = f'''
-echo "==> Running OpenClaw onboard with daemon install..."
-OPENCLAW_UID=$(id -u openclaw)
-sudo -u openclaw HOME=/home/openclaw XDG_RUNTIME_DIR=/run/user/$OPENCLAW_UID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$OPENCLAW_UID/bus openclaw onboard \\
-  --non-interactive \\
-  --accept-risk \\
-  --workspace /data/workspace \\
-  --install-daemon \\
-  --gateway-bind loopback \\
-  --gateway-auth password \\
-  --gateway-password "{gateway_token}" \\
-  --tailscale funnel \\
-  --skip-channels \\
-  --skip-skills \\
-  --skip-health \\
-  --skip-ui
-
-echo "==> NOTE: Tailscale requires authentication!"
-echo "==> After VM creation, SSH in and run:"
-echo "    sudo tailscale up"
-echo "==> Then start OpenClaw:"
-echo "    sudo -u openclaw openclaw gateway start"
+echo ""
+echo "=============================================="
+echo "  OpenClaw installed. Manual steps required:"
+echo "=============================================="
+echo ""
+echo "  1. SSH in:"
+echo "     ssh openclaw@<public-ip>"
+echo ""
+echo "  2. Authenticate Tailscale:"
+echo "     sudo tailscale up"
+echo ""
+echo "  3. Install and start OpenClaw gateway:"
+echo "     openclaw gateway install --token {gateway_token}"
+echo "     openclaw gateway start"
+echo ""
+echo "  4. Check status:"
+echo "     openclaw gateway status"
+echo ""
+echo "  Gateway Password: {gateway_token}"
+echo "=============================================="
 '''
         else:
             tailscale_install = ""
             service_start = f'''
-echo "==> Running OpenClaw onboard with daemon install..."
-OPENCLAW_UID=$(id -u openclaw)
-sudo -u openclaw HOME=/home/openclaw XDG_RUNTIME_DIR=/run/user/$OPENCLAW_UID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$OPENCLAW_UID/bus openclaw onboard \\
-  --non-interactive \\
-  --accept-risk \\
-  --workspace /data/workspace \\
-  --install-daemon \\
-  --gateway-bind lan \\
-  --gateway-auth token \\
-  --gateway-token "{gateway_token}" \\
-  --skip-channels \\
-  --skip-skills \\
-  --skip-health \\
-  --skip-ui
+echo ""
+echo "=============================================="
+echo "  OpenClaw installed. Manual steps required:"
+echo "=============================================="
+echo ""
+echo "  1. SSH in:"
+echo "     ssh openclaw@<public-ip>"
+echo ""
+echo "  2. Install and start OpenClaw gateway:"
+echo "     openclaw gateway install --token {gateway_token}"
+echo "     openclaw gateway start"
+echo ""
+echo "  3. Check status:"
+echo "     openclaw gateway status"
+echo ""
+echo "  Gateway Token: {gateway_token}"
+echo "=============================================="
 '''
 
         setup_script = f'''#!/bin/bash
@@ -514,12 +514,7 @@ chmod 440 /etc/sudoers.d/openclaw
 echo "==> Enabling systemd user lingering for openclaw..."
 loginctl enable-linger openclaw
 
-echo "==> Setting up XDG_RUNTIME_DIR for openclaw user..."
-mkdir -p /run/user/$(id -u openclaw)
-chown openclaw:openclaw /run/user/$(id -u openclaw)
-chmod 700 /run/user/$(id -u openclaw)
-
-{auth_setup}
+{auth_note}
 {service_start}
 echo "==> OpenClaw installation complete!"
 '''
@@ -840,35 +835,40 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         print()
         
         if self.config.use_tailscale:
-            print("  ⚠️  NEXT STEPS (Tailscale auth required):")
+            print("  ⚠️  NEXT STEPS (manual setup required):")
             print()
-            print(f"  1. SSH into VM:")
-            print(f"     {result['ssh_command']}")
+            print(f"  1. SSH into VM as openclaw user:")
+            print(f"     ssh openclaw@{result['public_ip']}")
             print()
             print("  2. Authenticate Tailscale:")
             print("     sudo tailscale up")
             print()
-            print("  3. Start OpenClaw:")
-            print("     sudo systemctl start openclaw")
+            print("  3. Install and start OpenClaw gateway:")
+            print(f"     openclaw gateway install --token {result['token']}")
+            print("     openclaw gateway start")
             print()
             print("  4. Check status:")
-            print("     sudo systemctl status openclaw")
+            print("     openclaw gateway status")
             print()
-            print(f"  Gateway Password: {result['dashboard_url'].split('token=')[1]}")
+            print(f"  Gateway Password: {result['token']}")
         else:
-            print("  📡 ACCESS (SSH tunnel required for dashboard):")
+            print("  ⚠️  NEXT STEPS (manual setup required):")
             print()
-            print(f"  1. Create SSH tunnel:")
-            print(f"     ssh -L 18789:localhost:18789 {self.config.admin_username}@{result['public_ip']}")
+            print(f"  1. SSH into VM as openclaw user:")
+            print(f"     ssh openclaw@{result['public_ip']}")
             print()
-            print(f"  2. Open dashboard:")
-            print(f"     http://localhost:18789/?token={result['dashboard_url'].split('token=')[1]}")
+            print("  2. Install and start OpenClaw gateway:")
+            print(f"     openclaw gateway install --token {result['token']}")
+            print("     openclaw gateway start")
             print()
-            print("  OpenClaw is auto-started and listening on LAN.")
-            print("  Check status: sudo -u openclaw openclaw gateway status")
-            print("  View logs: sudo -u openclaw openclaw gateway logs -f")
+            print("  3. Check status:")
+            print("     openclaw gateway status")
             print()
-            print(f"  Gateway Token: {result['dashboard_url'].split('token=')[1]}")
+            print("  📡 ACCESS (SSH tunnel for dashboard):")
+            print(f"     ssh -L 18789:localhost:18789 openclaw@{result['public_ip']}")
+            print(f"     http://localhost:18789/?token={result['token']}")
+            print()
+            print(f"  Gateway Token: {result['token']}")
         
         print()
 

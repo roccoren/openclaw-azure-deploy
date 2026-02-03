@@ -634,15 +634,40 @@ chmod 440 /etc/sudoers.d/openclaw
 echo "==> Enabling systemd user lingering for openclaw..."
 loginctl enable-linger openclaw
 
+# Ensure user runtime directory exists
+mkdir -p /run/user/$(id -u openclaw)
+chown openclaw:openclaw /run/user/$(id -u openclaw)
+chmod 700 /run/user/$(id -u openclaw)
+
 echo "==> Setting up user session environment..."
 cat >> /home/openclaw/.bashrc << 'BASHRCEOF'
 
 # Enable systemd user session (for openclaw gateway)
-if [ -z "$XDG_RUNTIME_DIR" ]; then
-    export XDG_RUNTIME_DIR=/run/user/$(id -u)
-    export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+
+# Ensure runtime dir exists
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    sudo mkdir -p "$XDG_RUNTIME_DIR"
+    sudo chown $(id -u):$(id -g) "$XDG_RUNTIME_DIR"
+    sudo chmod 700 "$XDG_RUNTIME_DIR"
 fi
 BASHRCEOF
+
+# Also add to .profile for login shells (su - openclaw)
+cat >> /home/openclaw/.profile << 'PROFILEEOF'
+
+# Enable systemd user session (for openclaw gateway)
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+
+# Ensure runtime dir exists
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    sudo mkdir -p "$XDG_RUNTIME_DIR"
+    sudo chown $(id -u):$(id -g) "$XDG_RUNTIME_DIR"
+    sudo chmod 700 "$XDG_RUNTIME_DIR"
+fi
+PROFILEEOF
 
 echo "==> Copying SSH authorized keys to openclaw user..."
 mkdir -p /home/openclaw/.ssh

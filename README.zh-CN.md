@@ -192,12 +192,12 @@ ssh <username>@<public-ip>
 
 ### 检查 OpenClaw 状态
 ```bash
-sudo -u openclaw openclaw gateway status
+sudo systemctl status openclaw
 ```
 
 ### 查看日志
 ```bash
-sudo -u openclaw openclaw gateway logs -f
+sudo journalctl -u openclaw -f
 ```
 
 ### 访问控制台
@@ -247,13 +247,13 @@ sudo cat /var/log/cloud-init-output.log
 ### OpenClaw 未运行
 ```bash
 # 检查状态
-sudo -u openclaw openclaw gateway status
+sudo systemctl status openclaw
 
 # 如果未运行则启动
-sudo -u openclaw openclaw gateway start
+sudo systemctl start openclaw
 
 # 查看最近的日志
-sudo -u openclaw openclaw gateway logs -n 100
+sudo journalctl -u openclaw -n 100
 ```
 
 ### 检查版本

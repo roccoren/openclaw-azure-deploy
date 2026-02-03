@@ -440,8 +440,30 @@ echo "==> Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh
 '''
             service_start = '''
-echo "==> Installing OpenClaw service..."
-sudo -u openclaw HOME=/home/openclaw openclaw gateway install
+echo "==> Creating system-level OpenClaw service..."
+cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
+[Unit]
+Description=OpenClaw Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/home/openclaw
+ExecStart=/usr/bin/openclaw gateway run
+Restart=always
+RestartSec=5
+Environment=HOME=/home/openclaw
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+systemctl daemon-reload
+systemctl enable openclaw
 
 echo "==> Running doctor check..."
 sudo -u openclaw HOME=/home/openclaw openclaw doctor --fix || true
@@ -450,14 +472,36 @@ echo "==> NOTE: Tailscale requires authentication!"
 echo "==> After VM creation, SSH in and run:"
 echo "    sudo tailscale up"
 echo "==> Then start OpenClaw:"
-echo "    sudo -u openclaw openclaw gateway start"
+echo "    sudo systemctl start openclaw"
 '''
         else:
             tailscale_install = ""
             service_start = '''
-echo "==> Installing and starting OpenClaw service..."
-sudo -u openclaw HOME=/home/openclaw openclaw gateway install
-sudo -u openclaw HOME=/home/openclaw openclaw gateway start
+echo "==> Creating system-level OpenClaw service..."
+cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
+[Unit]
+Description=OpenClaw Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/home/openclaw
+ExecStart=/usr/bin/openclaw gateway run
+Restart=always
+RestartSec=5
+Environment=HOME=/home/openclaw
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+systemctl daemon-reload
+systemctl enable openclaw
+systemctl start openclaw
 
 echo "==> Running doctor check..."
 sudo -u openclaw HOME=/home/openclaw openclaw doctor --fix || true
@@ -821,10 +865,10 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
             print("     sudo tailscale up")
             print()
             print("  3. Start OpenClaw:")
-            print("     sudo -u openclaw openclaw gateway start")
+            print("     sudo systemctl start openclaw")
             print()
-            print("  4. Get your Tailscale Funnel URL:")
-            print("     sudo -u openclaw openclaw gateway status")
+            print("  4. Check status:")
+            print("     sudo systemctl status openclaw")
             print()
             print(f"  Gateway Password: {result['dashboard_url'].split('token=')[1]}")
         else:
@@ -837,7 +881,8 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
             print(f"     http://localhost:18789/?token={result['dashboard_url'].split('token=')[1]}")
             print()
             print("  OpenClaw is auto-started and listening on LAN.")
-            print("  Check status: ssh <vm> 'sudo -u openclaw openclaw gateway status'")
+            print("  Check status: sudo systemctl status openclaw")
+            print("  View logs: sudo journalctl -u openclaw -f")
             print()
             print(f"  Gateway Token: {result['dashboard_url'].split('token=')[1]}")
         

@@ -558,6 +558,16 @@ chmod 440 /etc/sudoers.d/openclaw
 echo "==> Enabling systemd user lingering for openclaw..."
 loginctl enable-linger openclaw
 
+echo "==> Setting up user session environment..."
+cat >> /home/openclaw/.bashrc << 'BASHRCEOF'
+
+# Enable systemd user session (for openclaw gateway)
+if [ -z "$XDG_RUNTIME_DIR" ]; then
+    export XDG_RUNTIME_DIR=/run/user/$(id -u)
+    export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+fi
+BASHRCEOF
+
 {auth_note}
 {service_start}
 echo "==> OpenClaw installation complete!"

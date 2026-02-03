@@ -1,5 +1,7 @@
 # 🦞 OpenClaw Azure Deployment
 
+English | [简体中文](README.zh-CN.md)
+
 > **🤖 Built entirely by AI** — This project was created by [OpenClaw](https://openclaw.ai), an AI-powered assistant running Claude. Every script, configuration, and documentation file was generated through natural language conversations.
 
 Deploy OpenClaw to Azure VMs or Azure Container Apps with a single command.

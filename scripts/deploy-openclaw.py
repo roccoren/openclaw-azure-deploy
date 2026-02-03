@@ -440,23 +440,45 @@ echo "==> Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh
 '''
             service_start = f'''
+echo "==> Creating setup helper script..."
+cat > /home/openclaw/setup-gateway.sh << 'SETUPEOF'
+#!/bin/bash
+set -e
+
+# Read token from config
+TOKEN=$(jq -r '.gateway.auth.token // .gateway.auth.password' ~/.openclaw/openclaw.json)
+
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+    echo "Error: No gateway token found in config"
+    exit 1
+fi
+
+echo "Installing OpenClaw gateway service..."
+openclaw gateway install --token "$TOKEN"
+
+echo "Starting OpenClaw gateway..."
+openclaw gateway start
+
+echo ""
+echo "Gateway installed and started!"
+echo "Check status: openclaw gateway status"
+SETUPEOF
+chmod +x /home/openclaw/setup-gateway.sh
+chown openclaw:openclaw /home/openclaw/setup-gateway.sh
+
 echo ""
 echo "=============================================="
 echo "  OpenClaw installed. Manual steps required:"
 echo "=============================================="
 echo ""
-echo "  1. SSH in:"
+echo "  1. SSH in as openclaw:"
 echo "     ssh openclaw@<public-ip>"
 echo ""
 echo "  2. Authenticate Tailscale:"
 echo "     sudo tailscale up"
 echo ""
-echo "  3. Install and start OpenClaw gateway:"
-echo "     openclaw gateway install --token {gateway_token}"
-echo "     openclaw gateway start"
-echo ""
-echo "  4. Check status:"
-echo "     openclaw gateway status"
+echo "  3. Run the setup script:"
+echo "     ./setup-gateway.sh"
 echo ""
 echo "  Gateway Password: {gateway_token}"
 echo "=============================================="
@@ -464,20 +486,42 @@ echo "=============================================="
         else:
             tailscale_install = ""
             service_start = f'''
+echo "==> Creating setup helper script..."
+cat > /home/openclaw/setup-gateway.sh << 'SETUPEOF'
+#!/bin/bash
+set -e
+
+# Read token from config
+TOKEN=$(jq -r '.gateway.auth.token // .gateway.auth.password' ~/.openclaw/openclaw.json)
+
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+    echo "Error: No gateway token found in config"
+    exit 1
+fi
+
+echo "Installing OpenClaw gateway service..."
+openclaw gateway install --token "$TOKEN"
+
+echo "Starting OpenClaw gateway..."
+openclaw gateway start
+
+echo ""
+echo "Gateway installed and started!"
+echo "Check status: openclaw gateway status"
+SETUPEOF
+chmod +x /home/openclaw/setup-gateway.sh
+chown openclaw:openclaw /home/openclaw/setup-gateway.sh
+
 echo ""
 echo "=============================================="
 echo "  OpenClaw installed. Manual steps required:"
 echo "=============================================="
 echo ""
-echo "  1. SSH in:"
+echo "  1. SSH in as openclaw:"
 echo "     ssh openclaw@<public-ip>"
 echo ""
-echo "  2. Install and start OpenClaw gateway:"
-echo "     openclaw gateway install --token {gateway_token}"
-echo "     openclaw gateway start"
-echo ""
-echo "  3. Check status:"
-echo "     openclaw gateway status"
+echo "  2. Run the setup script:"
+echo "     ./setup-gateway.sh"
 echo ""
 echo "  Gateway Token: {gateway_token}"
 echo "=============================================="
@@ -496,7 +540,7 @@ CONFIGEOF
 
 echo "==> Installing Node.js 22.x..."
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
+apt-get install -y nodejs jq
 
 echo "==> Installing OpenClaw..."
 npm install -g openclaw
@@ -843,12 +887,8 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
             print("  2. Authenticate Tailscale:")
             print("     sudo tailscale up")
             print()
-            print("  3. Install and start OpenClaw gateway:")
-            print(f"     openclaw gateway install --token {result['token']}")
-            print("     openclaw gateway start")
-            print()
-            print("  4. Check status:")
-            print("     openclaw gateway status")
+            print("  3. Run the setup script:")
+            print("     ./setup-gateway.sh")
             print()
             print(f"  Gateway Password: {result['token']}")
         else:
@@ -857,12 +897,8 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
             print(f"  1. SSH into VM as openclaw user:")
             print(f"     ssh openclaw@{result['public_ip']}")
             print()
-            print("  2. Install and start OpenClaw gateway:")
-            print(f"     openclaw gateway install --token {result['token']}")
-            print("     openclaw gateway start")
-            print()
-            print("  3. Check status:")
-            print("     openclaw gateway status")
+            print("  2. Run the setup script:")
+            print("     ./setup-gateway.sh")
             print()
             print("  📡 ACCESS (SSH tunnel for dashboard):")
             print(f"     ssh -L 18789:localhost:18789 openclaw@{result['public_ip']}")

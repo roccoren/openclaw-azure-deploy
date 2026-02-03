@@ -98,6 +98,19 @@ class DeployConfig:
     auth_token: Optional[str] = None  # GitHub Copilot or other provider token
     use_tailscale: bool = False  # Use Tailscale Funnel for HTTPS
     
+    # Channel configuration
+    enable_telegram: bool = False
+    telegram_token: Optional[str] = None
+    enable_discord: bool = False
+    discord_token: Optional[str] = None
+    enable_slack: bool = False
+    slack_app_token: Optional[str] = None
+    slack_bot_token: Optional[str] = None
+    enable_msteams: bool = False
+    msteams_app_id: Optional[str] = None
+    msteams_app_password: Optional[str] = None
+    msteams_tenant_id: Optional[str] = None
+    
     # ACA-specific
     aca_cpu: float = 1.0
     aca_memory: str = "2Gi"
@@ -324,7 +337,24 @@ class VMDeployer:
     """Deploy OpenClaw to an Azure VM."""
     
     @staticmethod
-    def generate_cloud_init(gateway_token: str, auth_token: Optional[str] = None, use_tailscale: bool = False, admin_username: str = "azureuser") -> str:
+    def generate_cloud_init(
+        gateway_token: str,
+        auth_token: Optional[str] = None,
+        use_tailscale: bool = False,
+        admin_username: str = "azureuser",
+        # Channel configuration
+        enable_telegram: bool = False,
+        telegram_token: Optional[str] = None,
+        enable_discord: bool = False,
+        discord_token: Optional[str] = None,
+        enable_slack: bool = False,
+        slack_app_token: Optional[str] = None,
+        slack_bot_token: Optional[str] = None,
+        enable_msteams: bool = False,
+        msteams_app_id: Optional[str] = None,
+        msteams_app_password: Optional[str] = None,
+        msteams_tenant_id: Optional[str] = None,
+    ) -> str:
         """Generate cloud-init script with embedded tokens.
         
         Args:
@@ -332,7 +362,51 @@ class VMDeployer:
             auth_token: Optional GitHub Copilot or other provider token for model auth
             use_tailscale: If True, use Tailscale Funnel for HTTPS. Otherwise use LAN binding.
             admin_username: Admin username to copy SSH keys from
+            enable_telegram: Enable Telegram channel
+            telegram_token: Telegram bot token
+            enable_discord: Enable Discord channel
+            discord_token: Discord bot token
+            enable_slack: Enable Slack channel
+            slack_app_token: Slack app token (xapp-...)
+            slack_bot_token: Slack bot token (xoxb-...)
+            enable_msteams: Enable MS Teams channel
+            msteams_app_id: MS Teams App ID
+            msteams_app_password: MS Teams App Password
+            msteams_tenant_id: MS Teams Tenant ID
         """
+        # Build channel configuration
+        channels_config = {}
+        
+        if enable_telegram:
+            channels_config["telegram"] = {"enabled": True}
+            if telegram_token:
+                channels_config["telegram"]["botToken"] = telegram_token
+                channels_config["telegram"]["dmPolicy"] = "pairing"
+        
+        if enable_discord:
+            channels_config["discord"] = {"enabled": True}
+            if discord_token:
+                channels_config["discord"]["token"] = discord_token
+        
+        if enable_slack:
+            channels_config["slack"] = {"enabled": True}
+            if slack_app_token:
+                channels_config["slack"]["appToken"] = slack_app_token
+            if slack_bot_token:
+                channels_config["slack"]["botToken"] = slack_bot_token
+        
+        if enable_msteams:
+            channels_config["msteams"] = {"enabled": True}
+            if msteams_app_id:
+                channels_config["msteams"]["appId"] = msteams_app_id
+            if msteams_app_password:
+                channels_config["msteams"]["appPassword"] = msteams_app_password
+            if msteams_tenant_id:
+                channels_config["msteams"]["tenantId"] = msteams_tenant_id
+        
+        # Convert to JSON string for embedding
+        channels_json = json.dumps(channels_config, indent=4) if channels_config else "{}"
+        
         # Build auth setup command if token provided
         # For semi-automated flow, we just note the token - user runs onboard manually
         auth_setup = ""
@@ -345,94 +419,51 @@ echo "     openclaw onboard --non-interactive --accept-risk --auth-choice token 
 echo ""
 '''
         
-        # Config JSON depends on tailscale mode
+        # Build the config object programmatically
+        config_obj = {
+            "gateway": {
+                "mode": "local",
+                "bind": "loopback" if use_tailscale else "lan",
+                "port": 18789,
+            },
+            "agents": {
+                "defaults": {
+                    "workspace": "/data/workspace",
+                    "model": {
+                        "primary": "github-copilot/gpt-5.2-codex"
+                    }
+                }
+            },
+            "browser": {
+                "enabled": True,
+                "headless": True,
+                "noSandbox": True
+            }
+        }
+        
+        # Add channels if any are configured
+        if channels_config:
+            config_obj["channels"] = channels_config
+        
+        # Configure auth based on tailscale mode
         if use_tailscale:
-            # Funnel requires password auth, trustedProxies, and controlUi config
-            config_json = f'''{{
-  "gateway": {{
-    "mode": "local",
-    "bind": "loopback",
-    "port": 18789,
-    "trustedProxies": ["127.0.0.1"],
-    "tailscale": {{
-      "mode": "funnel"
-    }},
-    "auth": {{
-      "mode": "password",
-      "password": "{gateway_token}",
-      "allowTailscale": true
-    }},
-    "controlUi": {{
-      "dangerouslyDisableDeviceAuth": true
-    }}
-  }},
-  "agents": {{
-    "defaults": {{
-      "workspace": "/data/workspace",
-      "model": {{
-        "primary": "github-copilot/gpt-5.2-codex"
-      }}
-    }}
-  }},
-  "channels": {{
-    "discord": {{
-      "enabled": true
-    }},
-    "msteams": {{
-      "enabled": true
-    }},
-    "slack": {{
-      "enabled": true
-    }},
-    "telegram": {{
-      "enabled": true
-    }}
-  }},
-  "browser": {{
-    "enabled": true,
-    "headless": true,
-    "noSandbox": true
-  }}
-}}'''
+            config_obj["gateway"]["trustedProxies"] = ["127.0.0.1"]
+            config_obj["gateway"]["tailscale"] = {"mode": "funnel"}
+            config_obj["gateway"]["auth"] = {
+                "mode": "password",
+                "password": gateway_token,
+                "allowTailscale": True
+            }
+            config_obj["gateway"]["controlUi"] = {
+                "dangerouslyDisableDeviceAuth": True
+            }
         else:
-            config_json = f'''{{
-  "gateway": {{
-    "mode": "local",
-    "bind": "lan",
-    "port": 18789,
-    "auth": {{
-      "mode": "token",
-      "token": "{gateway_token}"
-    }}
-  }},
-  "agents": {{
-    "defaults": {{
-      "workspace": "/data/workspace",
-      "model": {{
-        "primary": "github-copilot/gpt-5.2-codex"
-      }}
-    }}
-  }},
-  "channels": {{
-    "discord": {{
-      "enabled": true
-    }},
-    "msteams": {{
-      "enabled": true
-    }},
-    "slack": {{
-      "enabled": true
-    }},
-    "telegram": {{
-      "enabled": true
-    }}
-  }},
-  "browser": {{
-    "enabled": true,
-    "headless": true,
-    "noSandbox": true
-  }}
-}}'''
+            config_obj["gateway"]["auth"] = {
+                "mode": "token",
+                "token": gateway_token
+            }
+        
+        config_json = json.dumps(config_obj, indent=2)
 
         # Setup script - Tailscale install only if needed
         if use_tailscale:
@@ -879,7 +910,24 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         print(f"==> Creating VM: {self.config.vm_name} (with cloud-init)")
         
         # Generate cloud-init script
-        cloud_init = self.generate_cloud_init(self.token, self.config.auth_token, self.config.use_tailscale, self.config.admin_username)
+        cloud_init = self.generate_cloud_init(
+            gateway_token=self.token,
+            auth_token=self.config.auth_token,
+            use_tailscale=self.config.use_tailscale,
+            admin_username=self.config.admin_username,
+            # Channel configuration
+            enable_telegram=self.config.enable_telegram,
+            telegram_token=self.config.telegram_token,
+            enable_discord=self.config.enable_discord,
+            discord_token=self.config.discord_token,
+            enable_slack=self.config.enable_slack,
+            slack_app_token=self.config.slack_app_token,
+            slack_bot_token=self.config.slack_bot_token,
+            enable_msteams=self.config.enable_msteams,
+            msteams_app_id=self.config.msteams_app_id,
+            msteams_app_password=self.config.msteams_app_password,
+            msteams_tenant_id=self.config.msteams_tenant_id,
+        )
         
         # Write cloud-init to temp file
         import tempfile
@@ -1136,6 +1184,30 @@ def parse_args() -> DeployConfig:
     vm_parser.add_argument("--tailscale", dest="use_tailscale", action="store_true",
                           help="Use Tailscale Funnel for HTTPS (requires manual auth after deploy)")
     
+    # Channel configuration flags
+    vm_parser.add_argument("--enable-telegram", dest="enable_telegram", action="store_true",
+                          help="Enable Telegram channel")
+    vm_parser.add_argument("--telegram-token", dest="telegram_token",
+                          help="Telegram bot token (from @BotFather)")
+    vm_parser.add_argument("--enable-discord", dest="enable_discord", action="store_true",
+                          help="Enable Discord channel")
+    vm_parser.add_argument("--discord-token", dest="discord_token",
+                          help="Discord bot token")
+    vm_parser.add_argument("--enable-slack", dest="enable_slack", action="store_true",
+                          help="Enable Slack channel")
+    vm_parser.add_argument("--slack-app-token", dest="slack_app_token",
+                          help="Slack app token (xapp-...)")
+    vm_parser.add_argument("--slack-bot-token", dest="slack_bot_token",
+                          help="Slack bot token (xoxb-...)")
+    vm_parser.add_argument("--enable-msteams", dest="enable_msteams", action="store_true",
+                          help="Enable Microsoft Teams channel")
+    vm_parser.add_argument("--msteams-app-id", dest="msteams_app_id",
+                          help="MS Teams App ID")
+    vm_parser.add_argument("--msteams-app-password", dest="msteams_app_password",
+                          help="MS Teams App Password")
+    vm_parser.add_argument("--msteams-tenant-id", dest="msteams_tenant_id",
+                          help="MS Teams Tenant ID")
+    
     # ACA subcommand
     aca_parser = subparsers.add_parser("aca", help="Deploy to Azure Container Apps")
     add_common_args(aca_parser)
@@ -1178,6 +1250,18 @@ def parse_args() -> DeployConfig:
             "admin_username": args.admin_username,
             "auth_token": args.auth_token,
             "use_tailscale": args.use_tailscale,
+            # Channel configuration
+            "enable_telegram": getattr(args, 'enable_telegram', False),
+            "telegram_token": getattr(args, 'telegram_token', None),
+            "enable_discord": getattr(args, 'enable_discord', False),
+            "discord_token": getattr(args, 'discord_token', None),
+            "enable_slack": getattr(args, 'enable_slack', False),
+            "slack_app_token": getattr(args, 'slack_app_token', None),
+            "slack_bot_token": getattr(args, 'slack_bot_token', None),
+            "enable_msteams": getattr(args, 'enable_msteams', False),
+            "msteams_app_id": getattr(args, 'msteams_app_id', None),
+            "msteams_app_password": getattr(args, 'msteams_app_password', None),
+            "msteams_tenant_id": getattr(args, 'msteams_tenant_id', None),
         })
     elif args.target == "aca":
         config_kwargs.update({

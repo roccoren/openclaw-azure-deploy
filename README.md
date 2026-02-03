@@ -103,6 +103,35 @@ openclaw-azure-deploy/
 | `--admin-username` | `$USER` | VM admin username |
 | `--dry-run` | false | Preview commands without executing |
 
+### Channel Configuration
+
+| Option | Description |
+|--------|-------------|
+| `--enable-telegram` | Enable Telegram channel |
+| `--telegram-token` | Telegram bot token (from @BotFather) |
+| `--enable-discord` | Enable Discord channel |
+| `--discord-token` | Discord bot token |
+| `--enable-slack` | Enable Slack channel |
+| `--slack-app-token` | Slack app token (xapp-...) |
+| `--slack-bot-token` | Slack bot token (xoxb-...) |
+| `--enable-msteams` | Enable Microsoft Teams channel |
+| `--msteams-app-id` | MS Teams App ID |
+| `--msteams-app-password` | MS Teams App Password |
+| `--msteams-tenant-id` | MS Teams Tenant ID |
+
+**Example: Deploy with Telegram**
+```bash
+python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
+  --enable-telegram --telegram-token "123:abc..."
+```
+
+**Example: Deploy with multiple channels**
+```bash
+python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
+  --enable-discord --discord-token "TOKEN" \
+  --enable-slack --slack-app-token "xapp-..." --slack-bot-token "xoxb-..."
+```
+
 ---
 
 ## ⚙️ Container Apps Options

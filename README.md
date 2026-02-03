@@ -192,12 +192,12 @@ ssh <username>@<public-ip>
 
 ### Check OpenClaw Status
 ```bash
-sudo systemctl status openclaw
+sudo -u openclaw openclaw gateway status
 ```
 
 ### View Logs
 ```bash
-sudo journalctl -u openclaw -f
+sudo -u openclaw openclaw gateway logs -f
 ```
 
 ### Access Dashboard
@@ -247,13 +247,13 @@ sudo cat /var/log/cloud-init-output.log
 ### OpenClaw not running
 ```bash
 # Check status
-sudo systemctl status openclaw
+sudo -u openclaw openclaw gateway status
 
 # Start if stopped
-sudo systemctl start openclaw
+sudo -u openclaw openclaw gateway start
 
 # View recent logs
-sudo journalctl -u openclaw -n 100
+sudo -u openclaw openclaw gateway logs -n 100
 ```
 
 ### Check versions

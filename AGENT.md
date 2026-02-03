@@ -110,10 +110,10 @@ The script outputs:
 ssh <username>@<public-ip>
 
 # Check OpenClaw status
-sudo systemctl status openclaw
+sudo -u openclaw openclaw gateway status
 
 # View logs
-sudo journalctl -u openclaw -f
+sudo -u openclaw openclaw gateway logs -f
 
 # Access dashboard (via SSH tunnel)
 ssh -L 18789:localhost:18789 <username>@<public-ip>
@@ -141,13 +141,13 @@ sudo cat /var/log/cloud-init-output.log
 **OpenClaw not running:**
 ```bash
 # Check status
-sudo systemctl status openclaw
+sudo -u openclaw openclaw gateway status
 
 # Start if stopped
-sudo systemctl start openclaw
+sudo -u openclaw openclaw gateway start
 
 # View recent logs
-sudo journalctl -u openclaw -n 100
+sudo -u openclaw openclaw gateway logs -n 100
 ```
 
 **Check installed versions:**

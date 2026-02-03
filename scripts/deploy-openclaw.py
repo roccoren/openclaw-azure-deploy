@@ -337,11 +337,13 @@ class VMDeployer:
         if auth_token:
             auth_setup = f'''
 echo "==> Setting up model auth..."
-sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept-risk \\
+OPENCLAW_UID=$(id -u openclaw)
+sudo -u openclaw HOME=/home/openclaw XDG_RUNTIME_DIR=/run/user/$OPENCLAW_UID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$OPENCLAW_UID/bus openclaw onboard --non-interactive --accept-risk \\
   --workspace /data/workspace \\
   --auth-choice token \\
   --token-provider github-copilot \\
-  --token "{auth_token}"
+  --token "{auth_token}" \\
+  --skip-daemon
 '''
         
         # Config JSON depends on tailscale mode
@@ -439,72 +441,46 @@ sudo -u openclaw HOME=/home/openclaw openclaw onboard --non-interactive --accept
 echo "==> Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh
 '''
-            service_start = '''
-echo "==> Creating system-level OpenClaw service..."
-cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
-[Unit]
-Description=OpenClaw Gateway
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=openclaw
-Group=openclaw
-WorkingDirectory=/home/openclaw
-ExecStart=/usr/bin/openclaw gateway run
-Restart=always
-RestartSec=5
-Environment=HOME=/home/openclaw
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
-
-[Install]
-WantedBy=multi-user.target
-SERVICEEOF
-
-systemctl daemon-reload
-systemctl enable openclaw
-
-echo "==> Running doctor check..."
-sudo -u openclaw HOME=/home/openclaw openclaw doctor --fix || true
+            service_start = f'''
+echo "==> Running OpenClaw onboard with daemon install..."
+OPENCLAW_UID=$(id -u openclaw)
+sudo -u openclaw HOME=/home/openclaw XDG_RUNTIME_DIR=/run/user/$OPENCLAW_UID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$OPENCLAW_UID/bus openclaw onboard \\
+  --non-interactive \\
+  --accept-risk \\
+  --workspace /data/workspace \\
+  --install-daemon \\
+  --gateway-bind loopback \\
+  --gateway-auth password \\
+  --gateway-password "{gateway_token}" \\
+  --tailscale funnel \\
+  --skip-channels \\
+  --skip-skills \\
+  --skip-health \\
+  --skip-ui
 
 echo "==> NOTE: Tailscale requires authentication!"
 echo "==> After VM creation, SSH in and run:"
 echo "    sudo tailscale up"
 echo "==> Then start OpenClaw:"
-echo "    sudo systemctl start openclaw"
+echo "    sudo -u openclaw openclaw gateway start"
 '''
         else:
             tailscale_install = ""
-            service_start = '''
-echo "==> Creating system-level OpenClaw service..."
-cat > /etc/systemd/system/openclaw.service << 'SERVICEEOF'
-[Unit]
-Description=OpenClaw Gateway
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=openclaw
-Group=openclaw
-WorkingDirectory=/home/openclaw
-ExecStart=/usr/bin/openclaw gateway run
-Restart=always
-RestartSec=5
-Environment=HOME=/home/openclaw
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
-
-[Install]
-WantedBy=multi-user.target
-SERVICEEOF
-
-systemctl daemon-reload
-systemctl enable openclaw
-systemctl start openclaw
-
-echo "==> Running doctor check..."
-sudo -u openclaw HOME=/home/openclaw openclaw doctor --fix || true
+            service_start = f'''
+echo "==> Running OpenClaw onboard with daemon install..."
+OPENCLAW_UID=$(id -u openclaw)
+sudo -u openclaw HOME=/home/openclaw XDG_RUNTIME_DIR=/run/user/$OPENCLAW_UID DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$OPENCLAW_UID/bus openclaw onboard \\
+  --non-interactive \\
+  --accept-risk \\
+  --workspace /data/workspace \\
+  --install-daemon \\
+  --gateway-bind lan \\
+  --gateway-auth token \\
+  --gateway-token "{gateway_token}" \\
+  --skip-channels \\
+  --skip-skills \\
+  --skip-health \\
+  --skip-ui
 '''
 
         setup_script = f'''#!/bin/bash
@@ -534,6 +510,14 @@ chmod 600 /home/openclaw/.openclaw/openclaw.json
 echo "==> Configuring passwordless sudo for openclaw user..."
 echo 'openclaw ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/openclaw
 chmod 440 /etc/sudoers.d/openclaw
+
+echo "==> Enabling systemd user lingering for openclaw..."
+loginctl enable-linger openclaw
+
+echo "==> Setting up XDG_RUNTIME_DIR for openclaw user..."
+mkdir -p /run/user/$(id -u openclaw)
+chown openclaw:openclaw /run/user/$(id -u openclaw)
+chmod 700 /run/user/$(id -u openclaw)
 
 {auth_setup}
 {service_start}
@@ -881,8 +865,8 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
             print(f"     http://localhost:18789/?token={result['dashboard_url'].split('token=')[1]}")
             print()
             print("  OpenClaw is auto-started and listening on LAN.")
-            print("  Check status: sudo systemctl status openclaw")
-            print("  View logs: sudo journalctl -u openclaw -f")
+            print("  Check status: sudo -u openclaw openclaw gateway status")
+            print("  View logs: sudo -u openclaw openclaw gateway logs -f")
             print()
             print(f"  Gateway Token: {result['dashboard_url'].split('token=')[1]}")
         

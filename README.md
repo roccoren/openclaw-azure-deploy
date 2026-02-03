@@ -6,6 +6,17 @@ Deploy OpenClaw to Azure VMs or Azure Container Apps with a single command.
 
 ---
 
+## 🤖 For AI Agents
+
+**If you're an AI agent** (Claude, GPT, Codex, OpenClaw, or any LLM-based assistant), read [`AGENT.md`](AGENT.md) for deployment instructions optimized for you.
+
+**Quick agent prompt:**
+> Read AGENT.md in this repository and deploy OpenClaw to Azure using the VM option in westus2.
+
+**OpenClaw skill:** Install `azure-deploy.skill` for native skill integration.
+
+---
+
 ## 🚀 Quick Start
 
 ### Deploy to Azure VM (Recommended)
@@ -50,8 +61,13 @@ az account show
 
 ```
 openclaw-azure-deploy/
+├── AGENT.md                    # 🤖 Agent-readable deployment instructions
+├── azure-deploy.skill          # 📦 OpenClaw skill package
+├── azure-deploy/               # Skill source files
+│   ├── SKILL.md
+│   └── scripts/
 ├── scripts/
-│   ├── deploy-openclaw.py     # 🎯 Main deployment script (VM + ACA)
+│   ├── deploy-openclaw.py      # 🎯 Main deployment script (VM + ACA)
 │   └── legacy/                 # Old bash scripts (deprecated)
 ├── bicep/                      # Azure Bicep templates (for ACA)
 │   ├── main.bicep

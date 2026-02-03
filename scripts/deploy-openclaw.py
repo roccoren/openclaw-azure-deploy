@@ -472,8 +472,11 @@ echo "=============================================="
 echo "  OpenClaw installed. Manual steps required:"
 echo "=============================================="
 echo ""
-echo "  1. SSH in as openclaw:"
-echo "     ssh openclaw@<public-ip>"
+echo "  1. SSH in as admin user:"
+echo "     ssh <admin-user>@<public-ip>"
+echo ""
+echo "  1b. Switch to openclaw user:"
+echo "     sudo -iu openclaw"
 echo ""
 echo "  2. Authenticate Tailscale:"
 echo "     sudo tailscale up"
@@ -518,8 +521,11 @@ echo "=============================================="
 echo "  OpenClaw installed. Manual steps required:"
 echo "=============================================="
 echo ""
-echo "  1. SSH in as openclaw:"
-echo "     ssh openclaw@<public-ip>"
+echo "  1. SSH in as admin user:"
+echo "     ssh <admin-user>@<public-ip>"
+echo ""
+echo "  1b. Switch to openclaw user:"
+echo "     sudo -iu openclaw"
 echo ""
 echo "  2. Run the setup script:"
 echo "     ./setup-gateway.sh"
@@ -901,8 +907,11 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         if self.config.use_tailscale:
             print("  ⚠️  NEXT STEPS (manual setup required):")
             print()
-            print(f"  1. SSH into VM as openclaw user:")
-            print(f"     ssh openclaw@{result['public_ip']}")
+            print(f"  1. SSH into VM as admin user:")
+            print(f"     ssh {self.config.admin_username}@{result['public_ip']}")
+            print()
+            print("  1b. Switch to openclaw user:")
+            print("     sudo -iu openclaw")
             print()
             print("  2. Authenticate Tailscale:")
             print("     sudo tailscale up")
@@ -914,8 +923,11 @@ final_message: "OpenClaw VM ready after $UPTIME seconds"
         else:
             print("  ⚠️  NEXT STEPS (manual setup required):")
             print()
-            print(f"  1. SSH into VM as openclaw user:")
-            print(f"     ssh openclaw@{result['public_ip']}")
+            print(f"  1. SSH into VM as admin user:")
+            print(f"     ssh {self.config.admin_username}@{result['public_ip']}")
+            print()
+            print("  1b. Switch to openclaw user:")
+            print("     sudo -iu openclaw")
             print()
             print("  2. Run the setup script:")
             print("     ./setup-gateway.sh")

@@ -313,6 +313,13 @@ The development process involved:
 
 ---
 
+## 📚 Channel Setup Manuals
+
+- [Slack Setup](docs/channel-slack.md)
+- [Discord Setup](docs/channel-discord.md)
+- [Telegram Setup](docs/channel-telegram.md)
+- [Microsoft Teams Setup](docs/channel-msteams.md)
+
 ## 📞 Resources
 
 - **OpenClaw:** https://openclaw.ai

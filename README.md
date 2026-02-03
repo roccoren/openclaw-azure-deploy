@@ -183,6 +183,42 @@ python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
 
 ---
 
+## 🔌 Add Channels via CLI
+
+After editing config, **restart the gateway**:
+
+```bash
+openclaw gateway restart
+```
+
+### Slack (Socket Mode)
+```bash
+openclaw config set channels.slack.enabled true --json
+openclaw config set channels.slack.appToken "xapp-..."
+openclaw config set channels.slack.botToken "xoxb-..."
+```
+
+### Discord
+```bash
+openclaw config set channels.discord.enabled true --json
+openclaw config set channels.discord.token "YOUR_DISCORD_BOT_TOKEN"
+```
+
+### Microsoft Teams (plugin required)
+```bash
+openclaw plugins install @openclaw/msteams
+```
+
+Then configure:
+```bash
+openclaw config set channels.msteams.enabled true --json
+openclaw config set channels.msteams.appId "<APP_ID>"
+openclaw config set channels.msteams.appPassword "<APP_PASSWORD>"
+openclaw config set channels.msteams.tenantId "<TENANT_ID>"
+openclaw config set channels.msteams.webhook.port 3978 --json
+openclaw config set channels.msteams.webhook.path "/api/messages"
+```
+
 ## 📊 Post-Deployment
 
 ### SSH into VM

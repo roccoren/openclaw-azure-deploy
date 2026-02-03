@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-> **🤖 Built entirely by AI** — This project was created by [OpenClaw](https://openclaw.ai), an AI-powered assistant running Claude. Every script, configuration, and documentation file was generated through natural language conversations.
+> **🤖 Built entirely by AI** — This project was created by [OpenClaw](https://openclaw.ai), an AI-powered assistant running Claude and OpenAI Codex (GPT-5.2-codex). Every script, configuration, and documentation file was generated through natural language conversations.
 
 Deploy OpenClaw to Azure VMs or Azure Container Apps with a single command.
 
@@ -266,7 +266,7 @@ openclaw --version
 
 ## 🤖 About This Project
 
-This entire project — including the Python deployment script, cloud-init templates, documentation, and troubleshooting guides — was created by **OpenClaw**, an AI assistant powered by Claude.
+This entire project — including the Python deployment script, cloud-init templates, documentation, and troubleshooting guides — was created by **OpenClaw**, an AI assistant powered by Claude and OpenAI Codex (GPT-5.2-codex).
 
 The development process involved:
 - Natural language conversations to define requirements
@@ -287,6 +287,6 @@ The development process involved:
 ---
 
 <p align="center">
-  <strong>🦞 Built with OpenClaw + Claude</strong><br>
+  <strong>🦞 Built with OpenClaw + Claude + Codex</strong><br>
   <em>AI-powered infrastructure automation</em>
 </p>

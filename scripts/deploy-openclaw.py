@@ -370,7 +370,7 @@ echo ""
     "defaults": {{
       "workspace": "/data/workspace",
       "model": {{
-        "primary": "github-copilot/claude-haiku-4.5"
+        "primary": "github-copilot/gpt-5.2-codex"
       }}
     }}
   }},
@@ -409,7 +409,7 @@ echo ""
     "defaults": {{
       "workspace": "/data/workspace",
       "model": {{
-        "primary": "github-copilot/claude-haiku-4.5"
+        "primary": "github-copilot/gpt-5.2-codex"
       }}
     }}
   }},

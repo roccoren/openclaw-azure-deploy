@@ -443,6 +443,9 @@ curl -fsSL https://tailscale.com/install.sh | sh
 echo "==> Installing OpenClaw service..."
 sudo -u openclaw HOME=/home/openclaw openclaw gateway install
 
+echo "==> Running doctor check..."
+sudo -u openclaw HOME=/home/openclaw openclaw doctor --fix || true
+
 echo "==> NOTE: Tailscale requires authentication!"
 echo "==> After VM creation, SSH in and run:"
 echo "    sudo tailscale up"
@@ -455,6 +458,9 @@ echo "    sudo -u openclaw openclaw gateway start"
 echo "==> Installing and starting OpenClaw service..."
 sudo -u openclaw HOME=/home/openclaw openclaw gateway install
 sudo -u openclaw HOME=/home/openclaw openclaw gateway start
+
+echo "==> Running doctor check..."
+sudo -u openclaw HOME=/home/openclaw openclaw doctor --fix || true
 '''
 
         setup_script = f'''#!/bin/bash

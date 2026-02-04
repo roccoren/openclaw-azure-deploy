@@ -477,6 +477,18 @@ cat > /home/openclaw/setup-gateway.sh << 'SETUPEOF'
 #!/bin/bash
 set -e
 
+# Set up systemd user session environment
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+
+# Ensure runtime dir exists
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    sudo mkdir -p "$XDG_RUNTIME_DIR"
+    sudo chown $(id -u):$(id -g) "$XDG_RUNTIME_DIR"
+    sudo chmod 700 "$XDG_RUNTIME_DIR"
+fi
+
+
 # Read token from config
 TOKEN=$(jq -r '.gateway.auth.token // .gateway.auth.password' ~/.openclaw/openclaw.json)
 
@@ -544,6 +556,18 @@ echo "==> Creating setup helper script..."
 cat > /home/openclaw/setup-gateway.sh << 'SETUPEOF'
 #!/bin/bash
 set -e
+
+# Set up systemd user session environment
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+
+# Ensure runtime dir exists
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    sudo mkdir -p "$XDG_RUNTIME_DIR"
+    sudo chown $(id -u):$(id -g) "$XDG_RUNTIME_DIR"
+    sudo chmod 700 "$XDG_RUNTIME_DIR"
+fi
+
 
 # Read token from config
 TOKEN=$(jq -r '.gateway.auth.token // .gateway.auth.password' ~/.openclaw/openclaw.json)

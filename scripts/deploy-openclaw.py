@@ -586,25 +586,6 @@ openclaw gateway start
 echo ""
 echo "Gateway installed and started!"
 echo "Check status: openclaw gateway status"
-
-echo ""
-# If tailscale funnel, attempt to show login URL
-MODE=$(jq -r '.gateway.tailscale.mode // ""' ~/.openclaw/openclaw.json)
-AUTH_MODE=$(jq -r '.gateway.auth.mode // ""' ~/.openclaw/openclaw.json)
-AUTH_SECRET=$(jq -r '.gateway.auth.password // .gateway.auth.token // ""' ~/.openclaw/openclaw.json)
-if [ "$MODE" = "funnel" ]; then
-    echo "Tailscale Funnel detected. Fetching URL..."
-    FUNNEL_URL=$(openclaw gateway status --json 2>/dev/null | jq -r '.gateway.tailscale.funnelUrl // .tailscale.funnelUrl // ""')
-    if [ -n "$FUNNEL_URL" ] && [ "$FUNNEL_URL" != "null" ]; then
-        if [ "$AUTH_MODE" = "password" ]; then
-            echo "Login URL: ${{FUNNEL_URL}}/?password=${{AUTH_SECRET}}"
-        else
-            echo "Login URL: ${{FUNNEL_URL}}/?token=${{AUTH_SECRET}}"
-        fi
-    else
-        echo "Funnel URL not found. Run: openclaw gateway status"
-    fi
-fi
 SETUPEOF
 chmod +x /home/openclaw/setup-gateway.sh
 chown openclaw:openclaw /home/openclaw/setup-gateway.sh

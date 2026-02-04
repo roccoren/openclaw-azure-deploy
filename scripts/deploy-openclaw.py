@@ -505,9 +505,9 @@ if [ "$MODE" = "funnel" ]; then
     FUNNEL_URL=$(openclaw gateway status --json 2>/dev/null | jq -r '.gateway.tailscale.funnelUrl // .tailscale.funnelUrl // ""')
     if [ -n "$FUNNEL_URL" ] && [ "$FUNNEL_URL" != "null" ]; then
         if [ "$AUTH_MODE" = "password" ]; then
-            echo "Login URL: ${FUNNEL_URL}/?password=${AUTH_SECRET}"
+            echo "Login URL: ${{FUNNEL_URL}}/?password=${{AUTH_SECRET}}"
         else
-            echo "Login URL: ${FUNNEL_URL}/?token=${AUTH_SECRET}"
+            echo "Login URL: ${{FUNNEL_URL}}/?token=${{AUTH_SECRET}}"
         fi
     else
         echo "Funnel URL not found. Run: openclaw gateway status"
@@ -573,9 +573,9 @@ if [ "$MODE" = "funnel" ]; then
     FUNNEL_URL=$(openclaw gateway status --json 2>/dev/null | jq -r '.gateway.tailscale.funnelUrl // .tailscale.funnelUrl // ""')
     if [ -n "$FUNNEL_URL" ] && [ "$FUNNEL_URL" != "null" ]; then
         if [ "$AUTH_MODE" = "password" ]; then
-            echo "Login URL: ${FUNNEL_URL}/?password=${AUTH_SECRET}"
+            echo "Login URL: ${{FUNNEL_URL}}/?password=${{AUTH_SECRET}}"
         else
-            echo "Login URL: ${FUNNEL_URL}/?token=${AUTH_SECRET}"
+            echo "Login URL: ${{FUNNEL_URL}}/?token=${{AUTH_SECRET}}"
         fi
     else
         echo "Funnel URL not found. Run: openclaw gateway status"

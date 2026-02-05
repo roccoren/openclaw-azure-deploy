@@ -19,6 +19,12 @@ Deploy OpenClaw to Azure VMs or Azure Container Apps with a single command.
 
 ---
 
+## 📚 Quickstart Guides
+
+- **[Discord + GitHub Copilot](docs/discord-quickstart.md)** — Deploy with Discord and GitHub Copilot auth
+
+---
+
 ## 🚀 Quick Start
 
 ### Deploy to Azure VM (Recommended)

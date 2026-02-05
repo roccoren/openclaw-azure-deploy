@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 > **🤖 Built entirely by AI** — This project was created by [OpenClaw](https://openclaw.ai), an AI-powered assistant running Claude and OpenAI Codex (GPT-5.2-codex). Every script, configuration, and documentation file was generated through natural language conversations.
 
-Deploy OpenClaw to Azure VMs or Azure Container Apps with a single command.
+Deploy OpenClaw to Azure VMs (production-ready) or Azure Container Apps (development only) with a single command.
 
 ---
 
@@ -41,54 +41,15 @@ python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
 python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 --dry-run
 ```
 
-### Deploy to Azure Container Apps
+### Deploy to Azure Container Apps (Development)
+
+> ⚠️ **Warning:** Container Apps deployment is currently in development and may not work properly. VM deployment is recommended for production use.
 
 ```bash
 python scripts/deploy-openclaw.py aca --name my-openclaw --location westus2
 ```
 
----
-
-## 📋 Prerequisites
-
-- Python 3.8+
-- Azure CLI (`az`) logged in
-- SSH public key in `~/.ssh/` (auto-detected)
-
-```bash
-# Login to Azure
-az login
-
-# Verify
-az account show
-```
-
----
-
-## 📁 Project Structure
-
-```
-openclaw-azure-deploy/
-├── AGENT.md                    # 🤖 Agent-readable deployment instructions
-├── azure-deploy.skill          # 📦 OpenClaw skill package
-├── azure-deploy/               # Skill source files
-│   ├── SKILL.md
-│   └── scripts/
-├── scripts/
-│   ├── deploy-openclaw.py      # 🎯 Main deployment script (VM + ACA)
-│   └── legacy/                 # Old bash scripts (deprecated)
-├── bicep/                      # Azure Bicep templates (for ACA)
-│   ├── main.bicep
-│   └── parameters.*.json
-├── config/                     # Configuration templates
-│   ├── gateway-config.json
-│   └── channels.json
-├── docs/
-│   ├── azure-openclaw-architecture.md
-│   └── legacy/                 # Old documentation
-├── Dockerfile                  # Container image for ACA
-└── README.md
-```
+**Note:** The ACA option is for testing only. For production deployments, use the VM option.
 
 ---
 
@@ -154,217 +115,47 @@ python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
 
 ---
 
-## 🔧 What Gets Created
+## 📁 Project Structure
 
-### VM Deployment
-
-| Resource | Naming |
-|----------|--------|
-| Resource Group | `<name>-group` |
-| Virtual Network | `<name>-vnet` (10.200.x.x/27) |
-| Subnet | `<name>-subnet` (/28) |
-| NSG | `<name>-nsg` (SSH + OpenClaw ports) |
-| Public IP | `<name>-pip` (static) |
-| VM | `<name>-vm` (Ubuntu 24.04 LTS, spot) |
-
-OpenClaw is installed via **cloud-init** and runs as a **systemd service**.
-
-### Container Apps Deployment
-
-| Resource | Naming |
-|----------|--------|
-| Resource Group | `<name>-group` |
-| Container Apps Environment | `<name>-env` |
-| Container App | `<name>-app` |
-| Log Analytics | `<name>-logs` |
-
----
-
-## 🌐 Network Configuration
-
-VNet addresses are **auto-incremented** in the `10.200.0.0/16` range:
-
-| Deployment | VNet CIDR |
-|------------|-----------|
-| 1st | `10.200.0.0/27` |
-| 2nd | `10.200.0.32/27` |
-| 3rd | `10.200.0.64/27` |
-| ... | ... |
-
-To reuse an existing VNet:
-```bash
-python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
-  --resource-group existing-rg \
-  --vnet-name existing-vnet \
-  --subnet-name existing-subnet
+```
+openclaw-azure-deploy/
+├── AGENT.md                    # 🤖 Agent-readable deployment instructions
+├── azure-deploy.skill          # 📦 OpenClaw skill package
+├── azure-deploy/               # Skill source files
+│   ├── SKILL.md
+│   └── scripts/
+├── scripts/
+│   ├── deploy-openclaw.py      # 🎯 Main deployment script (VM + ACA)
+│   └── legacy/                 # Old bash scripts (deprecated)
+├── bicep/                      # Azure Bicep templates (for ACA)
+│   ├── main.bicep
+│   └── parameters.*.json
+├── config/                     # Configuration templates
+│   ├── gateway-config.json
+│   └── channels.json
+├── docs/
+│   ├── azure-openclaw-architecture.md
+│   ├── discord-quickstart.md   # Quickstart guide for Discord + GitHub Copilot
+│   └── legacy/                 # Old documentation
+├── Dockerfile                  # Container image for ACA
+└── README.md
 ```
 
 ---
 
-## 🔑 Authentication
+## 🚨 Development Status
 
-### Gateway Token
-A random gateway token is auto-generated and shown after deployment:
-```
-Dashboard: http://<public-ip>:18789/?token=<TOKEN>
-```
-
-### Model Auth (GitHub Copilot)
-Pass `--auth-token` to configure GitHub Copilot authentication:
-```bash
-python scripts/deploy-openclaw.py vm --name my-openclaw --location westus2 \
-  --auth-token "ghu_xxxxxxxxxxxx"
-```
+- ✅ **Azure VM**: Production-ready
+- ⚠️ **Azure Container Apps**: In development (not recommended for production)
 
 ---
 
-## 🔌 Add Channels via CLI
+## 🤝 Contributing
 
-After editing config, **restart the gateway**:
-
-```bash
-openclaw gateway restart
-```
-
-### Slack (Socket Mode)
-```bash
-openclaw config set channels.slack.enabled true --json
-openclaw config set channels.slack.appToken "xapp-..."
-openclaw config set channels.slack.botToken "xoxb-..."
-```
-
-### Discord
-```bash
-openclaw config set channels.discord.enabled true --json
-openclaw config set channels.discord.token "YOUR_DISCORD_BOT_TOKEN"
-```
-
-### Microsoft Teams (plugin required)
-```bash
-openclaw plugins install @openclaw/msteams
-```
-
-Then configure:
-```bash
-openclaw config set channels.msteams.enabled true --json
-openclaw config set channels.msteams.appId "<APP_ID>"
-openclaw config set channels.msteams.appPassword "<APP_PASSWORD>"
-openclaw config set channels.msteams.tenantId "<TENANT_ID>"
-openclaw config set channels.msteams.webhook.port 3978 --json
-openclaw config set channels.msteams.webhook.path "/api/messages"
-```
-
-## 📊 Post-Deployment
-
-### SSH into VM
-```bash
-ssh <username>@<public-ip>
-```
-
-### Check OpenClaw Status
-```bash
-sudo -u openclaw openclaw gateway status
-```
-
-### View Logs
-```bash
-sudo -u openclaw openclaw gateway logs -f
-```
-
-### Access Dashboard
-```
-http://<public-ip>:18789/?token=<TOKEN>
-```
+This project was AI-generated. Contributions welcome! The Python deployment script is well-documented and extensible.
 
 ---
 
-## 💰 Cost Estimates
+## 📄 License
 
-### VM (Spot Pricing) — Recommended
-| Resource | Monthly |
-|----------|---------|
-| VM (D2als_v6 spot) | ~$15-25 |
-| Disk (128 GB) | ~$10 |
-| Public IP | ~$3 |
-| **Total** | **~$28-38** |
-
-### Container Apps
-| Resource | Monthly |
-|----------|---------|
-| Container (1 vCPU, 2 GB) | ~$50 |
-| Log Analytics | ~$5 |
-| **Total** | **~$55** |
-
----
-
-## 🔒 Security
-
-- ✅ SSH key authentication (no passwords)
-- ✅ NSG limits access to ports 22 and 18789
-- ✅ Gateway token required for dashboard
-- ✅ OpenClaw runs as non-root `openclaw` user
-- ✅ Managed identity enabled on VM
-
----
-
-## 🆘 Troubleshooting
-
-### Cloud-init failed
-```bash
-sudo cloud-init status
-sudo cat /var/log/cloud-init-output.log
-```
-
-### OpenClaw not running
-```bash
-# Check status
-sudo -u openclaw openclaw gateway status
-
-# Start if stopped
-sudo -u openclaw openclaw gateway start
-
-# View recent logs
-sudo -u openclaw openclaw gateway logs -n 100
-```
-
-### Check versions
-```bash
-node --version
-openclaw --version
-```
-
----
-
-## 🤖 About This Project
-
-This entire project — including the Python deployment script, cloud-init templates, documentation, and troubleshooting guides — was created by **OpenClaw**, an AI assistant powered by Claude and OpenAI Codex (GPT-5.2-codex).
-
-The development process involved:
-- Natural language conversations to define requirements
-- Iterative debugging and refinement
-- Real-world testing on Azure infrastructure
-
-**AI-generated. Human-guided. Production-ready.**
-
----
-
-## 📚 Channel Setup Manuals
-
-- [Slack Setup](docs/channel-slack.md)
-- [Discord Setup](docs/channel-discord.md)
-- [Telegram Setup](docs/channel-telegram.md)
-- [Microsoft Teams Setup](docs/channel-msteams.md)
-
-## 📞 Resources
-
-- **OpenClaw:** https://openclaw.ai
-- **OpenClaw Docs:** https://docs.openclaw.ai
-- **Azure CLI:** https://learn.microsoft.com/cli/azure
-- **Source:** https://github.com/roccoren/openclaw-azure-deploy
-
----
-
-<p align="center">
-  <strong>🦞 Built with OpenClaw + Claude + Codex</strong><br>
-  <em>AI-powered infrastructure automation</em>
-</p>
+MIT
